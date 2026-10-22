@@ -71,7 +71,9 @@ end)
 
 -- Old defaults ------------------------------------------------------------------
 
-test("render without the new options draws exactly the 1.2.0 objects", function()
+-- 1.3.0 changed the default look on purpose (8 grid lines, 1 px widths at camera zoom 1.5, label font/scale);
+-- 1.2.0 drew 5 grid lines at width 1. Layout and label texts are unchanged.
+test("render without the new options draws the 1.3.0 default look", function()
     with_chunk(function(surface, chunk)
         local data = {}
         for i = 1, 10 do
@@ -81,11 +83,11 @@ test("render without the new options draws exactly the 1.2.0 objects", function(
             data = data, index = 0, length = 10, counts = {only = 10}, sum = {only = 550}, ttl = 60,
         })
 
-        -- 5 grid lines + 5 labels + 9 segments, as 1.2.0 drew them.
-        assert.equals(19, #ids)
+        -- 8 grid lines + 8 labels + 9 segments.
+        assert.equals(25, #ids)
         local lines, texts = count_types(ids)
-        assert.equals(14, lines)
-        assert.equals(5, texts)
+        assert.equals(17, lines)
+        assert.equals(8, texts)
 
         local expected_bottom = 700 / 32 - 0.5
         near(2.0, metadata.graph_left, "graph_left")
@@ -94,25 +96,41 @@ test("render without the new options draws exactly the 1.2.0 objects", function(
         near(expected_bottom, metadata.graph_bottom, "graph_bottom")
         near(10, metadata.min_y, "min_y")
         near(100, metadata.max_y, "max_y")
+        near(1.5, metadata.camera_zoom, "camera_zoom")
+        near(0.5 / 1.5, metadata.line_width, "line_width")
 
         -- First grid line at the bottom edge, first label "10%" right-aligned in the gutter.
         local first_line = ids[1]
         near(chunk.coord.y + expected_bottom, first_line.from.position.y, "first grid y")
         near(chunk.coord.x + 2.0, first_line.from.position.x, "first grid x")
+        near(0.5 / 1.5, first_line.width, "grid width")
         assert.equals("10%", ids[2].text)
         assert.equals("right", ids[2].alignment)
         local label_texts_seen = {}
-        for i = 2, 10, 2 do
+        for i = 2, 16, 2 do
             label_texts_seen[#label_texts_seen + 1] = ids[i].text
         end
         local expected_texts = {}
-        for i = 0, 4 do
-            expected_texts[i + 1] = charts.format_percent_label(10 + 90 * i / 4)
+        for i = 0, 7 do
+            expected_texts[i + 1] = charts.format_percent_label(10 + 90 * i / 7)
         end
         assert.same(expected_texts, label_texts_seen)
 
         assert.is_nil(metadata.seconds_ago)
         assert.is_nil(metadata.x_labels)
+    end)
+end)
+
+test("grid_lines = 5 still draws the 1.2.0 object set", function()
+    with_chunk(function(surface, chunk)
+        local data = {}
+        for i = 1, 10 do
+            data[i] = {only = i * 10}
+        end
+        local _, ids = charts.render_line_graph_with_metadata(surface, chunk, {
+            data = data, index = 0, length = 10, counts = {only = 10}, sum = {only = 550}, ttl = 60, grid_lines = 5,
+        })
+        assert.equals(19, #ids)
     end)
 end)
 
@@ -298,8 +316,8 @@ end)
 
 test("grid_lines sets the number of horizontal lines and labels", function()
     with_chunk(function(surface, chunk)
-        local _, five_ids, five = render(surface, chunk, 50)
-        local _, eight_ids, eight = render(surface, chunk, 50, {grid_lines = 8})
+        local _, five_ids, five = render(surface, chunk, 50, {grid_lines = 5})
+        local _, eight_ids, eight = render(surface, chunk, 50)
         assert.equals(5, #five.y_ticks)
         assert.equals(8, #eight.y_ticks)
         assert.equals(#five_ids + 6, #eight_ids)
