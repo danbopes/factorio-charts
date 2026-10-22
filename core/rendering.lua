@@ -5,11 +5,37 @@ local rendering_module = {}
 local DEFAULT_VIEWPORT_WIDTH = 900
 local DEFAULT_VIEWPORT_HEIGHT = 700
 
----Configure surface brightness settings for chart visibility
+-- out-of-map renders pure black under always_day, needs no lights, and costs no render objects. Every chart chunk
+-- lies outside the 1x1 map, and set_tiles still works there; a position that never gets a tile shows the
+-- unexplored-map fog texture instead, so the whole chunk area is always tiled.
+local BACKGROUND_TILE = "out-of-map"
+
 ---@param surface LuaSurface
-local function configure_surface_brightness(surface)
-	surface.daytime = 0.5
-	surface.freeze_daytime = true
+---@param coord table {x, y} top-left tile
+---@param tiles_width number
+---@param tiles_height number
+local function lay_background(surface, coord, tiles_width, tiles_height)
+	local tiles = {}
+	local i = 1
+	for x = coord.x, coord.x + tiles_width - 1 do
+		for y = coord.y, coord.y + tiles_height - 1 do
+			tiles[i] = {name = BACKGROUND_TILE, position = {x = x, y = y}}
+			i = i + 1
+		end
+	end
+	surface.set_tiles(tiles)
+end
+
+---@param chunk table
+local function destroy_lights(chunk)
+	if chunk.light_ids then
+		for _, light_id in ipairs(chunk.light_ids) do
+			if light_id.valid then
+				light_id.destroy()
+			end
+		end
+	end
+	chunk.light_ids = {}
 end
 
 ---Create a chart rendering surface and associated data structure
@@ -29,7 +55,8 @@ function rendering_module.create_surface(surface_name, options)
 			height = 1,
 		})
 	end
-	configure_surface_brightness(surface)
+	-- Exact colours without lights; versions before 1.3.0 froze daytime at 0.5 and lit each chunk instead.
+	surface.always_day = true
 
 	-- Hide the surface from all forces' map view
 	for _, force in pairs(game.forces) do
@@ -49,7 +76,7 @@ end
 ---Allocate a chunk for graph rendering
 ---@param surface_data table The surface data from create_surface
 ---@param options table? Optional settings {viewport_width, viewport_height}
----@return table chunk {coord, light_ids, tiles_width, tiles_height}
+---@return table chunk {coord, light_ids (always empty since 1.3.0), tiles_width, tiles_height}
 function rendering_module.allocate_chunk(surface_data, options)
 	options = options or {}
 	-- Use provided viewport dimensions, or fall back to surface_data defaults
@@ -81,39 +108,13 @@ function rendering_module.allocate_chunk(surface_data, options)
 			surface_data.next_chunk_x = surface_data.next_chunk_x - 1
 			surface_data.next_chunk_y = surface_data.next_chunk_y + 1
 		end
-
-		-- Create dark tiles for graph background (sized to viewport)
-		local tiles = {}
-		local i = 1
-		for x = chunk_coord.x, chunk_coord.x + tiles_width - 1 do
-			for y = chunk_coord.y, chunk_coord.y + tiles_height - 1 do
-				tiles[i] = {name = "lab-dark-1", position = {x = x, y = y}}
-				i = i + 1
-			end
-		end
-		surface_data.surface.set_tiles(tiles)
 	end
 
-	-- Add multiple bright lights to illuminate the graph area
-	-- Adjust light positions based on tile coverage
-	local light_ids = {}
-	local light_spacing_x = tiles_width / 3
-	local light_spacing_y = tiles_height / 3
-	for lx = 0, 2 do
-		for ly = 0, 2 do
-			local light_id = rendering.draw_light{
-				sprite = "utility/light_medium",
-				scale = 50,
-				intensity = 10,
-				minimum_darkness = 0,
-				target = {chunk_coord.x + light_spacing_x * (lx + 0.5), chunk_coord.y + light_spacing_y * (ly + 0.5)},
-				surface = surface_data.surface,
-			}
-			table.insert(light_ids, light_id)
-		end
-	end
+	-- Also on reuse: a freed coordinate may still carry the lab tiles of a version before 1.3.0.
+	lay_background(surface_data.surface, chunk_coord, tiles_width, tiles_height)
 
-	return {coord = chunk_coord, light_ids = light_ids, tiles_width = tiles_width, tiles_height = tiles_height}
+	-- light_ids stays for consumers that iterate it; charts no longer use lights.
+	return {coord = chunk_coord, light_ids = {}, tiles_width = tiles_width, tiles_height = tiles_height}
 end
 
 ---Ensure a chunk has sufficient tile coverage for the given viewport
@@ -143,33 +144,32 @@ function rendering_module.ensure_tile_coverage(surface_data, chunk, options)
 	local new_width = math.max(tiles_width, current_width)
 	local new_height = math.max(tiles_height, current_height)
 
-	-- Create dark tiles for the expanded area
-	local tiles = {}
-	local i = 1
-	for x = chunk.coord.x, chunk.coord.x + new_width - 1 do
-		for y = chunk.coord.y, chunk.coord.y + new_height - 1 do
-			tiles[i] = {name = "lab-dark-1", position = {x = x, y = y}}
-			i = i + 1
-		end
-	end
-	surface_data.surface.set_tiles(tiles)
+	lay_background(surface_data.surface, chunk.coord, new_width, new_height)
 
 	-- Update chunk's recorded tile size
 	chunk.tiles_width = new_width
 	chunk.tiles_height = new_height
 end
 
+---Give a chunk allocated by a version before 1.3.0 the current background (idempotent)
+---Lays out-of-map tiles over the chunk's tile area, destroys its lights and sets always_day on the surface.
+---Call it once per stored chunk (e.g. from on_configuration_changed); chunks from allocate_chunk need nothing.
+---@param surface_data table The surface data
+---@param chunk table The chunk to restyle
+function rendering_module.restyle_chunk(surface_data, chunk)
+	if not chunk or not chunk.coord then return end
+	local surface = surface_data.surface
+	surface.always_day = true
+	destroy_lights(chunk)
+	-- 32 is what ensure_tile_coverage assumes for chunks that predate tiles_width.
+	lay_background(surface, chunk.coord, chunk.tiles_width or 32, chunk.tiles_height or 32)
+end
+
 ---Free a chunk back to the pool
 ---@param surface_data table The surface data
 ---@param chunk table The chunk to free
 function rendering_module.free_chunk(surface_data, chunk)
-	if chunk.light_ids then
-		for _, light_id in ipairs(chunk.light_ids) do
-			if light_id.valid then
-				light_id.destroy()
-			end
-		end
-	end
+	destroy_lights(chunk)
 	table.insert(surface_data.chunk_freelist, chunk.coord)
 end
 
