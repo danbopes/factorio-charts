@@ -4,6 +4,127 @@ local line_graph = {}
 local colors_module = require("core/colors")
 local format_module = require("core/format")
 
+local TILE_PIXELS = 32
+-- Height reserved under the plot for X labels when x_axis is on.
+local X_LABEL_ROW = 0.7
+local X_LABEL_MIN_SPACING_PX = 40
+
+local time_units = {
+	seconds = 1,
+	minutes = 60,
+	hours = 3600,
+}
+
+---Smallest m * 10^k >= raw with m drawn from `multipliers` (ascending, ending in 10)
+local function nice_ceil(raw, multipliers)
+	if raw <= 0 then
+		return 0
+	end
+	local base = 10 ^ math.floor(math.log(raw, 10))
+	for _, m in ipairs(multipliers) do
+		-- Tolerance so float noise in raw (0.30000000000000004) does not skip a step.
+		if m * base >= raw * (1 - 1e-9) then
+			return m * base
+		end
+	end
+	return 10 * base
+end
+
+local Y_STEP_MULTIPLIERS = {1, 2, 2.5, 5, 10}
+local X_STEP_MULTIPLIERS = {1, 2, 5, 10}
+
+---Expand [lo, hi] to nice tick boundaries with exactly `intervals` equal steps
+---@return number lo, number hi
+local function nice_range(lo, hi, intervals)
+	local step = nice_ceil((hi - lo) / intervals, Y_STEP_MULTIPLIERS)
+	if step == 0 then
+		return lo, hi
+	end
+	-- Flooring lo can push the top past hi; each retry moves to the next nice step.
+	for _ = 1, 8 do
+		local nice_lo = math.floor(lo / step + 1e-9) * step
+		local nice_hi = nice_lo + step * intervals
+		if nice_hi >= hi - step * 1e-9 then
+			return nice_lo, nice_hi
+		end
+		step = nice_ceil(step * (1 + 1e-6), Y_STEP_MULTIPLIERS)
+	end
+	return lo, hi
+end
+
+local function format_y_label(label_format, value)
+	if type(label_format) == "function" then
+		return label_format(value)
+	elseif label_format == "time" then
+		return format_module.time_label(value)
+	elseif label_format == "si" then
+		return format_module.si_label(value)
+	end
+	return format_module.percent_label(value)
+end
+
+---Work out X tick positions for an x_axis spec
+---@param x_axis table The x_axis option
+---@param columns number Number of ring-buffer slots drawn
+---@param plot_width number Plot width in tiles
+---@return table ticks {unit, unit_seconds, step, seconds_per_column, labels = {{seconds_ago, text}}}
+local function compute_x_ticks(x_axis, columns, plot_width)
+	local ticks_per_point = x_axis.ticks_per_point or 60
+	local seconds_per_column = ticks_per_point / 60
+	-- A buffer of N slots stands for N slots of history, so a 600 x 1 s buffer reads "10" minutes at its
+	-- left edge like vanilla, even though its oldest sample is one slot newer than that.
+	local span = math.max(columns, 0) * seconds_per_column
+
+	local fmt = x_axis.format or "auto"
+	local unit
+	if time_units[fmt] then
+		unit = fmt
+	elseif span < 120 then
+		unit = "seconds"
+	elseif span < 7200 then
+		unit = "minutes"
+	else
+		unit = "hours"
+	end
+	local unit_seconds = time_units[unit]
+	local span_units = span / unit_seconds
+
+	local step
+	if span_units <= 0 then
+		step = 1
+	elseif type(x_axis.labels) == "number" and x_axis.labels >= 2 then
+		step = nice_ceil(span_units / (x_axis.labels - 1), X_STEP_MULTIPLIERS)
+	else
+		local plot_px = plot_width * TILE_PIXELS
+		local max_intervals = math.max(1, math.floor(plot_px / X_LABEL_MIN_SPACING_PX))
+		step = nice_ceil(span_units / max_intervals, X_STEP_MULTIPLIERS)
+	end
+
+	local decimals = math.max(0, -math.floor(math.log(step, 10) + 1e-9))
+	local labels = {}
+	local count = math.floor(span_units / step + 1e-9) + 1
+	for k = 0, count - 1 do
+		local value = k * step
+		local seconds_ago = value * unit_seconds
+		local text
+		if type(fmt) == "function" then
+			text = fmt(seconds_ago)
+		else
+			text = format_module.axis_number(value, decimals)
+		end
+		labels[#labels + 1] = {seconds_ago = seconds_ago, value = value, text = text}
+	end
+
+	return {
+		unit = unit,
+		unit_seconds = unit_seconds,
+		step = step,
+		seconds_per_column = seconds_per_column,
+		ticks_per_point = ticks_per_point,
+		labels = labels,
+	}
+end
+
 ---Internal render function that optionally collects metadata
 ---@param surface LuaSurface The rendering surface
 ---@param chunk table The chunk with coord
@@ -22,8 +143,14 @@ local function render_internal(surface, chunk, options, collect_metadata)
 	local length = options.length
 	local counts = options.counts
 	local sum = options.sum
-	local fixed_range = options.y_range
+	local y_range_option = options.y_range
+	local fixed_range = type(y_range_option) == "table" and y_range_option or nil
 	local label_format = options.label_format or "percent"
+	local x_axis = options.x_axis
+	if type(x_axis) ~= "table" then
+		x_axis = nil
+	end
+	local num_grid_lines = math.max(2, options.grid_lines or 5)
 	local selected_series = options.selected_series
 	local ttl = options.ttl or 360
 	local viewport_width = options.viewport_width or 900
@@ -99,23 +226,33 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		return nil
 	end
 
-	-- Use fixed range if provided
 	if fixed_range then
 		min_y = fixed_range[1]
 		max_y = fixed_range[2]
 	else
-		if min_y == max_y then
+		if y_range_option == "zero" then
+			min_y = math.min(min_y, 0)
+			max_y = math.max(max_y, 0)
+			if min_y == max_y then
+				max_y = min_y + 1
+			end
+		elseif min_y == max_y then
 			min_y = min_y - 1
 			max_y = max_y + 1
 		end
+		if options.nice_ticks then
+			min_y, max_y = nice_range(min_y, max_y, num_grid_lines - 1)
+		end
 	end
 
-	-- Calculate graph coordinates
 	-- graph_left must leave room for y-axis labels
 	local graph_left = 2.0
 	local graph_right = viewport_width / 32 - 0.5  -- Reduced right margin for better fill
 	local graph_top = 1
 	local graph_bottom = viewport_height / 32 - 0.5  -- Reduced bottom margin
+	if x_axis then
+		graph_bottom = graph_bottom - X_LABEL_ROW
+	end
 
 	local graph_width = graph_right - graph_left
 	local graph_height = graph_bottom - graph_top
@@ -138,8 +275,9 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		end
 	end
 
+	local y_ticks = collect_metadata and {} or nil
+
 	-- Draw horizontal grid lines with Y-axis labels
-	local num_grid_lines = 5
 	for i = 0, num_grid_lines - 1 do
 		local grid_value = min_y + (y_range * i / (num_grid_lines - 1))
 		local grid_y = graph_bottom - ((grid_value - min_y) * dy)
@@ -155,14 +293,9 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		}
 		line_ids[#line_ids + 1] = id
 
-		-- Y-axis label
-		local label_text
-		if type(label_format) == "function" then
-			label_text = label_format(grid_value)
-		elseif label_format == "time" then
-			label_text = format_module.time_label(grid_value)
-		else
-			label_text = format_module.percent_label(grid_value)
+		local label_text = format_y_label(label_format, grid_value)
+		if y_ticks then
+			y_ticks[#y_ticks + 1] = {value = grid_value, y = grid_y, text = label_text}
 		end
 		local text_id = rendering.draw_text{
 			text = label_text,
@@ -175,6 +308,41 @@ local function render_internal(surface, chunk, options, collect_metadata)
 			time_to_live = ttl,
 		}
 		line_ids[#line_ids + 1] = text_id
+	end
+
+	local x_ticks = nil
+	if x_axis then
+		x_ticks = compute_x_ticks(x_axis, length, graph_width)
+		for _, label in ipairs(x_ticks.labels) do
+			-- Newest sample sits at the right edge as "0", like the vanilla graph.
+			local label_x = graph_right
+			if length > 1 then
+				label_x = graph_right - dx * label.seconds_ago / x_ticks.seconds_per_column
+			end
+			label.x = label_x
+
+			if x_axis.grid then
+				line_ids[#line_ids + 1] = rendering.draw_line{
+					surface = surface,
+					color = grid_color,
+					width = 1,
+					from = {entity_pos.x + label_x, entity_pos.y + graph_top},
+					to = {entity_pos.x + label_x, entity_pos.y + graph_bottom},
+					time_to_live = ttl,
+				}
+			end
+
+			line_ids[#line_ids + 1] = rendering.draw_text{
+				text = label.text,
+				surface = surface,
+				target = {entity_pos.x + label_x, entity_pos.y + graph_bottom + 0.1},
+				color = label_color,
+				scale = 1.0,
+				alignment = "center",
+				vertical_alignment = "top",
+				time_to_live = ttl,
+			}
+		end
 	end
 
 	-- Draw lines for each series and optionally track point positions
@@ -276,7 +444,38 @@ local function render_internal(surface, chunk, options, collect_metadata)
 			dx = dx,
 			dy = dy,
 			point_positions = point_positions,
+
+			columns = length,
+			plot = {left = graph_left, top = graph_top, right = graph_right, bottom = graph_bottom},
+			series_order = {},
+			label_format = label_format,
+			y_ticks = y_ticks,
 		}
+
+		-- Bottom-most first: series are stroked from to_draw down to 1, so entry 1 of ordered_sums ends on top.
+		for j = to_draw, 1, -1 do
+			local entry = ordered_sums[j]
+			metadata.series_order[#metadata.series_order + 1] = {name = entry.name, color_index = entry.color_index}
+		end
+
+		local x_positions = {}
+		for i = 1, length do
+			-- dx is infinite for a single slot; 0 * inf would be NaN.
+			x_positions[i] = length > 1 and graph_left + (i - 1) * dx or graph_left
+		end
+		metadata.x_positions = x_positions
+
+		if x_ticks then
+			local seconds_ago = {}
+			for i = 1, length do
+				seconds_ago[i] = (length - i) * x_ticks.seconds_per_column
+			end
+			metadata.seconds_ago = seconds_ago
+			metadata.x_labels = x_ticks.labels
+			metadata.x_unit = x_ticks.unit
+			metadata.x_step = x_ticks.step
+			metadata.ticks_per_point = x_ticks.ticks_per_point
+		end
 	end
 
 	return ordered_sums, line_ids, metadata
@@ -291,8 +490,14 @@ end
 ---  - length: number Buffer capacity
 ---  - counts: table {[series_name]: sample_count}
 ---  - sum: table {[series_name]: total} for calculating averages
----  - y_range: table? {min, max} Fixed Y-axis range (nil for auto-scale)
----  - label_format: (string|function)? "percent" (default), "time", or function(value) -> string
+---  - y_range: (table|string)? {min, max} fixed range, "zero" auto max with min pinned at 0, nil auto-scale
+---  - label_format: (string|function)? "percent" (default), "time", "si", or function(value) -> string
+---  - grid_lines: number? Horizontal grid lines incl. top and bottom (default 5)
+---  - nice_ticks: boolean? Round an auto-scaled range out to 1/2/2.5/5 x 10^k steps (default false)
+---  - x_axis: (table|false)? Time labels under the plot (default false). Fields:
+---      ticks_per_point (game ticks per ring-buffer slot, default 60),
+---      format ("auto"|"seconds"|"minutes"|"hours"|function(seconds_ago) -> string),
+---      labels ("auto" or max label count), grid (vertical grid lines, default false)
 ---  - selected_series: table? {[name]: bool} Filter (nil = show all, false = hide)
 ---  - ttl: number? Time to live in ticks (default 360)
 ---  - viewport_width: number? Viewport width in pixels (default 900)
