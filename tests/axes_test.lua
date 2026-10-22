@@ -398,6 +398,32 @@ test("nice_ticks leaves a fixed y_range alone", function()
     end)
 end)
 
+test("a fixed y_range without grid_lines keeps 5 lines with round steps", function()
+    with_chunk(function(surface, chunk)
+        local _, _, md = render(surface, chunk, 50, {y_range = {0, 100}})
+        assert.same({"0%", "25%", "50%", "75%", "100%"}, label_texts(md.y_ticks))
+        local _, _, eight = render(surface, chunk, 50, {y_range = {0, 100}, grid_lines = 8})
+        assert.equals(8, #eight.y_ticks)
+        local _, _, auto = render(surface, chunk, 50)
+        assert.equals(8, #auto.y_ticks)
+    end)
+end)
+
+test("percent Y labels on a narrow auto range gain decimals instead of repeating", function()
+    with_chunk(function(surface, chunk)
+        local _, _, md = charts.render_line_graph_with_metadata(surface, chunk, {
+            data = {{a = 50}, {a = 51.5}, {a = 50.7}}, index = 0, length = 3, counts = {a = 3}, sum = {a = 152.2},
+            ttl = 60,
+        })
+        local texts = label_texts(md.y_ticks)
+        assert.equals(8, #texts)
+        for i = 2, #texts do
+            assert.are_not.equal(texts[i - 1], texts[i], "percent tick " .. i)
+        end
+        assert.equals("50%", texts[1])
+    end)
+end)
+
 -- time_series passthrough -------------------------------------------------------
 
 test("time_series.render fills ticks_per_point from the interval and keeps the caller's table", function()

@@ -9,6 +9,7 @@ local TILE_PIXELS = 32
 -- Height reserved under the plot for X labels when x_axis is on.
 local X_LABEL_ROW = 0.7
 local X_LABEL_MIN_SPACING_PX = 40
+local FIXED_RANGE_GRID_LINES = 5
 
 local time_units = {
 	seconds = 1,
@@ -61,10 +62,10 @@ local function format_y_label(label_format, value, decimals)
 	elseif label_format == "si" then
 		return format_module.si_label(value, decimals)
 	end
-	return format_module.percent_label(value)
+	return format_module.percent_label(value, decimals)
 end
 
----Format every Y tick; for "si" and "time", add decimals until no two adjacent labels read the same
+---Format every Y tick; for "si", "time" and "percent", add decimals until no two adjacent labels read the same
 ---@param values number[]
 ---@return string[]
 local function format_y_labels(label_format, values)
@@ -84,10 +85,11 @@ local function format_y_labels(label_format, values)
 		for i, value in ipairs(values) do
 			texts[i] = format_y_label(label_format, value, decimals)
 		end
-		if (label_format ~= "si" and label_format ~= "time") or not has_duplicate() then
+		if (label_format ~= "si" and label_format ~= "time" and label_format ~= "percent") or not has_duplicate() then
 			break
 		end
-		decimals = (decimals or 1) + 1
+		-- si and time already show one decimal below 10, percent shows none.
+		decimals = decimals and decimals + 1 or (label_format == "percent" and 1 or 2)
 	end
 	return texts
 end
@@ -180,7 +182,9 @@ local function render_internal(surface, chunk, options, collect_metadata)
 	if type(x_axis) ~= "table" then
 		x_axis = nil
 	end
-	local num_grid_lines = math.max(2, options.grid_lines or style.GRID_LINES)
+	-- A fixed range like Cybersyn's {0, 100} percent chart reads 0/25/50/75/100 with 5 lines; 8 gives 0, 14, 29...
+	local default_grid_lines = fixed_range and FIXED_RANGE_GRID_LINES or style.GRID_LINES
+	local num_grid_lines = math.max(2, options.grid_lines or default_grid_lines)
 	local selected_series = options.selected_series
 	local ttl = options.ttl or 360
 	local viewport_width = options.viewport_width or 900
@@ -557,7 +561,8 @@ end
 ---  - sum: table {[series_name]: total} for calculating averages
 ---  - y_range: (table|string)? {min, max} fixed range, "zero" auto max with min pinned at 0, nil auto-scale
 ---  - label_format: (string|function)? "percent" (default), "time", "si", or function(value) -> string
----  - grid_lines: number? Horizontal grid lines incl. top and bottom (default 8 since 1.3.0, was 5)
+---  - grid_lines: number? Horizontal grid lines incl. top and bottom (default 8 since 1.3.0, was 5; 5 with a fixed
+---    {min, max} y_range)
 ---  - camera_zoom: number? Zoom of the camera that shows the chart (default 1.5); line widths are derived from it
 ---  - line_px: number? Series line thickness in screen pixels at camera_zoom (default 1)
 ---  - line_width: number? Raw draw_line width for the series; wins over line_px

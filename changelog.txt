@@ -6,7 +6,8 @@ Date: ????
     - Chart chunks use out-of-map tiles on an always_day surface instead of lab tiles lit by nine lights (pure black, 9 fewer render objects per chunk); allocate_chunk and ensure_tile_coverage also set always_day, so surfaces from old saves do not go dark
     - Line graph points are plot width / columns apart (was / (columns - 1)): each column is a time slot ending at its point, the newest on the right edge and the oldest one slot in from the left, so the X labels span exactly the plot ("10" on the left edge for 300 x 2 s); metadata dx and x_positions follow
     - Bar chart grid, labels and hatching use the same style, with 1 px lines
-    - Time labels keep one decimal below 10 of a unit ("1.7m" instead of "2m"), and "si"/"time" axis labels add decimals when two neighbouring ticks would read the same
+    - Time labels keep one decimal below 10 of a unit ("1.7m" instead of "2m"), and "si"/"time"/"percent" axis labels add decimals when two neighbouring ticks would read the same
+    - A fixed y_range = {min, max} without grid_lines keeps 5 grid lines, so a {0, 100} percent chart still reads 0/25/50/75/100 (auto ranges get the new 8)
   Features:
     - X axis for line graphs: x_axis = {ticks_per_point, format, labels, grid} draws time-ago labels under the plot ("10 ... 0.5 0" minutes), newest at the right; time_series.render fills ticks_per_point from interval.ticks
     - Y axis options: label_format = "si" ("0", "16k", "1.2M"), grid_lines, y_range = "zero" (auto max, min pinned at 0) and nice_ticks (1/2/2.5/5 x 10^k steps)

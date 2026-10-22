@@ -40,8 +40,12 @@ end
 
 ---Format a percentage for Y-axis labels
 ---@param value number The percentage value (0-100)
+---@param decimals number? Maximum decimals (trailing zeros dropped); default none
 ---@return string
-function format_module.percent_label(value)
+function format_module.percent_label(value, decimals)
+	if decimals then
+		return strip_zeros(string.format("%." .. decimals .. "f", value)) .. "%"
+	end
 	return string.format("%.0f%%", value)
 end
 

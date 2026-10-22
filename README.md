@@ -89,7 +89,8 @@ line, grid and background style is the default since 1.3.0 (see "The look" below
 charts.render.line_graph(surface, chunk, {
     data = ring_buffer, index = idx, length = len, counts = counts, sum = sums,
     label_format = "si",          -- Y labels "0", "16k", "1.2M"
-    grid_lines = 8,               -- horizontal grid lines incl. top and bottom (default 8 since 1.3.0, was 5)
+    grid_lines = 8,               -- horizontal grid lines incl. top and bottom (default 8 since 1.3.0, was 5;
+                                  -- 5 with a fixed {min, max} y_range, so {0, 100} reads 0/25/50/75/100)
     y_range = "zero",             -- auto max, min pinned at 0 ({min, max} stays a fixed range)
     nice_ticks = true,            -- round the auto range to 1/2/2.5/5 x 10^k steps (default false)
     x_axis = {                    -- default false: no X labels
@@ -106,8 +107,8 @@ The X axis counts time backwards: the newest slot is "0" at the right edge and a
 `plot width / columns` apart, the newest on the right edge and the oldest one slot in from the left edge, and the
 left edge is exactly `columns x ticks_per_point / 60` seconds old (1.2.0 spread the points `width / (columns - 1)`
 apart, oldest on the left edge). "auto" picks seconds below 2 minutes, minutes below 2 hours,
-hours above. The plot shrinks by 0.7 tile to make room for the label row. "si" and "time" Y labels add decimals
-when two neighbouring ticks would otherwise read the same.
+hours above. The plot shrinks by 0.7 tile to make room for the label row. "si", "time" and "percent" Y labels add
+decimals when two neighbouring ticks would otherwise read the same.
 
 `render_line_graph_with_metadata` returns, besides the 1.2.0 fields (`graph_*`, `min_y`, `max_y`, `dx`, `dy`,
 `point_positions`):
