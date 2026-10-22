@@ -38,4 +38,79 @@ function format_module.time_detailed(seconds)
 	end
 end
 
+-- Vanilla production-graph style: "0", "950", "1.2k", "16k", "1.2M".
+local si_units = {
+	{1e12, "T"},
+	{1e9, "G"},
+	{1e6, "M"},
+	{1e3, "k"},
+}
+
+local function strip_zeros(text)
+	if text:find("%.") then
+		text = text:gsub("0+$", ""):gsub("%.$", "")
+	end
+	return text
+end
+
+-- One decimal below 10, whole numbers above, so labels keep two or three significant digits.
+local function short_number(x)
+	if x < 10 then
+		local text = strip_zeros(string.format("%.1f", x))
+		if tonumber(text) < 10 then
+			return text
+		end
+	end
+	return string.format("%.0f", x)
+end
+
+---Format a number with an SI suffix the way Factorio's production graph labels its axis
+---@param value number
+---@return string
+function format_module.si_label(value)
+	if value ~= value then
+		return "NaN"
+	end
+	local magnitude = math.abs(value)
+	local unit_index = #si_units + 1
+	for i, unit in ipairs(si_units) do
+		if magnitude >= unit[1] then
+			unit_index = i
+			break
+		end
+	end
+
+	local text
+	while true do
+		local unit = si_units[unit_index]
+		local scaled = unit and magnitude / unit[1] or magnitude
+		text = short_number(scaled)
+		-- Rounding can carry into the next unit (999.6k -> "1000k"), which should read "1M".
+		if tonumber(text) >= 1000 and unit_index > 1 then
+			unit_index = unit_index - 1
+		else
+			text = text .. (unit and unit[2] or "")
+			break
+		end
+	end
+
+	if value < 0 and text ~= "0" then
+		text = "-" .. text
+	end
+	return text
+end
+
+---Format an axis tick value with at most `decimals` decimals and no trailing zeros
+---@param value number
+---@param decimals number?
+---@return string
+function format_module.axis_number(value, decimals)
+	decimals = decimals or 1
+	local text = strip_zeros(string.format("%." .. decimals .. "f", value))
+	if text == "-0" then
+		text = "0"
+	end
+	return text
+end
+
 return format_module

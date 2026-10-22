@@ -58,6 +58,7 @@ charts.format = {
 	time_label = format.time_label,
 	percent_label = format.percent_label,
 	time_detailed = format.time_detailed,
+	si_label = format.si_label,
 }
 
 -- Interaction primitives
@@ -151,6 +152,7 @@ charts.get_max_series = colors.get_max_series
 charts.format_time_label = format.time_label
 charts.format_percent_label = format.percent_label
 charts.format_time_detailed = format.time_detailed
+charts.format_si_label = format.si_label
 
 -- Low-level interaction primitives
 charts.tile_to_screen = interaction.tile_to_screen
