@@ -579,6 +579,17 @@ test("hover needs an explicit id: a generated id is not registered and hover cal
 	charts.interactive.destroy(named)
 end)
 
+test("register does not modify the state", function()
+	local state = make_state("test-crosshair-register-pure", {id = "crosshair-register-pure"})
+	charts.interactive.unregister(state)
+	state.hover = nil
+	local before = serpent.block(state, {comment = false, sortkeys = true})
+	charts.interactive.register(state)
+	assert.equals(before, serpent.block(state, {comment = false, sortkeys = true}))
+	assert.is_nil(state.hover)
+	charts.interactive.destroy(state)
+end)
+
 test("old on_hover path keeps working next to the crosshair", function()
 	local calls = {}
 	local state = make_state("test-crosshair-old-path", {

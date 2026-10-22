@@ -55,12 +55,11 @@ local function callback(state, name)
 	return state.options and state.options[name]
 end
 
----Make a state reachable from charts.events.handle_gui_hover/handle_gui_leave
+---Make a state reachable from charts.events.handle_gui_hover/handle_gui_leave. Does not modify the state.
 ---@param state InteractiveChartState A state created with options.id
 function interactive_chart.register(state)
 	require_explicit_id(state)
 	registry[state.id] = state
-	state.hover = state.hover or {}
 end
 
 ---@param state InteractiveChartState
