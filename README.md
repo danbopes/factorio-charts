@@ -233,7 +233,8 @@ Details:
   series at the midpoints of their y values, so the cell under the pointer is the series nearest in y) or
   `"column"` (one full-height button per column, markers on every series, tooltip lists all values).
   `opts.max_buttons` (default 400): when columns x series exceeds it, k = ceil(columns x series / max_buttons)
-  adjacent columns share a button and report the centre column (300 columns x 6 series -> k = 5, 360 buttons).
+  adjacent columns share a button and report the centre column, or the nearest column of the group that has
+  points when the centre has none (300 columns x 6 series -> k = 5, 360 buttons).
   `opts.format_tooltip(cell, state) -> LocalisedString` replaces the default tooltip. Button positions are in GUI
   units: pass `opts.player` (or `opts.gui_zoom`) unless the camera zoom is `display_scale / display_density_scale`.
 - Rebuild the buttons after `update_line_graph` (the tooltips hold values). An active crosshair follows a redraw

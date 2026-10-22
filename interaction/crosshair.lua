@@ -105,7 +105,8 @@ end
 ---Cell mode splits each column's plot height between the visible series at the midpoints of their y values, so
 ---the cell under the pointer belongs to the series nearest in y (the series vanilla picks). When columns x series
 ---exceeds opts.max_buttons, k = ceil(columns * series / max_buttons) adjacent columns share one cell, which then
----reports its centre column: fewer GUI elements at the price of a coarser x resolution.
+---reports its centre column (or the nearest column of the group with points when the centre has none): fewer GUI
+---elements at the price of a coarser x resolution.
 ---@param chunk table Chunk with coord
 ---@param metadata table Line graph metadata from render_with_metadata
 ---@param opts table? {mode?: "cell"|"column", max_buttons?: number, layout?: CrosshairLayout}
@@ -135,6 +136,17 @@ function crosshair.create_regions(chunk, metadata, opts)
 		local last = math.min(columns, first + group - 1)
 		local centre = math.floor((first + last) / 2)
 		local points = layout.by_column[centre]
+		-- A gap in the centre column must not blank the whole group: report the nearest column that has points.
+		local offset = 1
+		while not points and (centre - offset >= first or centre + offset <= last) do
+			if centre - offset >= first and layout.by_column[centre - offset] then
+				centre = centre - offset
+			elseif centre + offset <= last and layout.by_column[centre + offset] then
+				centre = centre + offset
+			end
+			points = layout.by_column[centre]
+			offset = offset + 1
+		end
 		if points then
 			-- Column 1 owns the strip left of the oldest point too, so the buttons cover the whole plot.
 			local left = first == 1 and plot.left or math.max(plot.left, layout.x_positions[first] - half)

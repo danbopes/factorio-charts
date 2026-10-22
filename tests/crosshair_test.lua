@@ -258,6 +258,30 @@ test("hover regions: nil metadata gives no regions", function()
 	assert.equals(0, #charts.interaction.create_line_graph_hover_regions(CHUNK, nil))
 end)
 
+test("a grouped cell whose centre column has no points reports the nearest column with points", function()
+	local metadata = wide_metadata(300, 6)
+	-- k = 5: the first group is columns 1..5 with centre 3. Remove every series there, and one series at the
+	-- centre of the second group (columns 6..10, centre 8).
+	for s = 1, 6 do
+		table.remove(metadata.point_positions["s" .. s], 3)
+	end
+	local s1 = metadata.point_positions.s1
+	for i = #s1, 1, -1 do
+		if s1[i].data_index == 8 then
+			table.remove(s1, i)
+		end
+	end
+	local by_column = regions_by_column(charts.interaction.create_line_graph_hover_regions(CHUNK, metadata))
+	assert.is_nil(by_column[3])
+	local first_group = by_column[2] or by_column[4]
+	assert.is_not_nil(first_group)
+	assert.equals(1, first_group[1].data.first_column)
+	assert.equals(5, first_group[1].data.last_column)
+	assert.is_true(math.abs(first_group[1].tile_bounds.left - 2) < 1e-9)
+	assert.is_not_nil(by_column[8])
+	assert.equals(5, #by_column[8])
+end)
+
 test("hover regions from a real render use the rendered point positions", function()
 	local state = make_state("test-crosshair-real")
 	local regions = charts.interactive.get_hover_regions(state)
