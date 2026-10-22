@@ -10,6 +10,15 @@ local DEFAULT_MAX_BUTTONS = 400
 local EPSILON = 1e-6
 
 local WHITE = {r = 1, g = 1, b = 1, a = 1}
+-- Render colours are premultiplied, so 60% white is 0.6 in every channel; full white would glare on black.
+local GUIDE_COLOR = {r = 0.6, g = 0.6, b = 0.6, a = 0.6}
+local DEFAULT_ZOOM = 1.5
+
+-- MERGE(b3): switch to charts.style.line_width once core/style.lua lands. draw_line thickness is
+-- ceil(width * camera_zoom) whole screen pixels, so aiming half a pixel low lands exactly on px.
+local function line_width(px, zoom)
+	return (px - 0.5) / zoom
+end
 
 ---@class CrosshairLayout
 ---@field plot table {left, top, right, bottom} chunk-relative tiles
@@ -284,7 +293,7 @@ end
 ---@param metadata table Line graph metadata
 ---@param cell table Region data from create_regions (crosshair_cell or crosshair_column)
 ---@param player LuaPlayer|uint Only this player sees the objects
----@param opts table? {layout?, line_width?: number, series_mode?: "lines"|"polygon", color?: Color, marker_radius?: number, marker_width?: number, ttl?: number}
+---@param opts table? {layout?, camera_zoom?: number (default metadata.camera_zoom or 1.5), series_px?: number (twice the base line), base_line_width?: number (1), marker_px?: number (2), marker_color?: Color, series_mode?: "polygon"|"lines" (default "polygon": one object per run; "lines": one per segment), color?: Color, marker_radius?: number, ttl?: number} color is the guide-line colour
 ---@return LuaRenderObject[] objects
 function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 	opts = opts or {}
@@ -298,15 +307,23 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 	local ox, oy = chunk.coord.x, chunk.coord.y
 	local players = {player}
 	local ttl = opts.ttl
-	local color = opts.color or WHITE
+	local color = opts.color or GUIDE_COLOR
+	local marker_color = opts.marker_color or WHITE
 	local marker_radius = opts.marker_radius or 0.12
-	local marker_width = opts.marker_width or 2
+	-- MERGE(b3): metadata.camera_zoom comes with the style work; until then the caller passes it.
+	local zoom = metadata.camera_zoom or opts.camera_zoom or DEFAULT_ZOOM
+	local guide_width = line_width(1, zoom)
+	local marker_width = line_width(opts.marker_px or 2, zoom)
+	-- Twice the base line as it lands on screen. MERGE(b3): base_line_width is the renderer's draw_line width
+	-- (1 in 1.2.0, i.e. 2 px at zoom 1.5); read it from b3's line_width option/metadata once that exists.
+	local base_px = math.max(1, math.ceil((opts.base_line_width or 1) * zoom - 1e-6))
+	local series_px = opts.series_px or 2 * base_px
 	local x = cell.graph_x or layout.x_positions[cell.column]
 
 	objects[#objects + 1] = rendering.draw_line{
 		surface = surface,
 		color = color,
-		width = 1,
+		width = guide_width,
 		from = {ox + x, oy + plot.top},
 		to = {ox + x, oy + plot.bottom},
 		players = players,
@@ -318,7 +335,7 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 		objects[#objects + 1] = rendering.draw_line{
 			surface = surface,
 			color = color,
-			width = 1,
+			width = guide_width,
 			from = {ox + plot.left, oy + y},
 			to = {ox + plot.right, oy + y},
 			players = players,
@@ -327,15 +344,16 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 
 		local points = metadata.point_positions[cell.series_name]
 		if points then
-			local width = (opts.line_width or 1) * 2
+			local width = line_width(series_px, zoom)
 			local series_color = cell.color or WHITE
 			for _, run in ipairs(split_runs(points, layout.dx)) do
 				if #run >= 2 then
-					if opts.series_mode == "polygon" then
+					if opts.series_mode ~= "lines" then
 						objects[#objects + 1] = rendering.draw_polygon{
 							surface = surface,
 							color = series_color,
-							vertices = ribbon_vertices(run, width / 64, ox, oy),
+							-- Polygons are not quantised like lines: the ribbon is exactly series_px screen pixels thick.
+							vertices = ribbon_vertices(run, series_px / (64 * zoom), ox, oy),
 							players = players,
 							time_to_live = ttl,
 						}
@@ -358,7 +376,7 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 
 		objects[#objects + 1] = rendering.draw_circle{
 			surface = surface,
-			color = color,
+			color = marker_color,
 			radius = marker_radius,
 			width = marker_width,
 			filled = false,
@@ -370,7 +388,7 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 		for _, entry in ipairs(cell.values) do
 			objects[#objects + 1] = rendering.draw_circle{
 				surface = surface,
-				color = color,
+				color = marker_color,
 				radius = marker_radius,
 				width = marker_width,
 				filled = false,

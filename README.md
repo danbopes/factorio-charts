@@ -6,7 +6,7 @@ A reusable charting library for Factorio 2.0+ mods. Provides line graphs and sta
 
 - **Line Graphs**: Multi-series time series data with auto-scaling Y-axis
 - **Stacked Bar Charts**: Phase breakdown visualization with optional hatched phases
-- **Interactive Charts**: Hit testing, hover highlights, tooltips, overlay buttons
+- **Interactive Charts**: Hit testing, hover highlights, tooltips, overlay buttons, production-graph crosshair hover
 - **Time Series**: Multi-resolution cascading aggregation (like RRDtool)
 - **Surface Management**: Automatic chunk allocation and cleanup
 - **Color Palettes**: 12 distinct colors for series differentiation
@@ -124,6 +124,72 @@ when two neighbouring ticks would otherwise read the same.
 `charts.render.time_series` passes `x_axis`, `grid_lines`, `nice_ticks` and `y_range` through and caches the
 metadata on `intervals[i].metadata`.
 
+## Crosshair hover (line graphs)
+
+Like the vanilla production graph: hovering a line graph draws a white vertical line at the hovered column, a
+white horizontal line and a small circle at the hovered point, redraws that series twice as thick, and shows a
+native tooltip ("iron-plate / 35k - 6.6 minutes ago"). Factorio reports no mouse position over a camera, so the
+plot is covered with transparent overlay buttons that raise `on_gui_hover` / `on_gui_leave`.
+
+1. A transparent button style in your `data.lua`:
+   ```lua
+   data.raw["gui-style"].default.my_chart_overlay_button = {
+       type = "button_style", parent = "button",
+       default_graphical_set = {}, hovered_graphical_set = {}, clicked_graphical_set = {},
+       padding = 0, minimal_width = 1, minimal_height = 1,
+   }
+   ```
+2. An interactive line graph with a stable id, and the buttons on its camera:
+   ```lua
+   local state = charts.interactive.create_line_graph(surface, chunk, {
+       id = "my-mod-production-" .. player.index,  -- stable across save/load (generated ids are not)
+       data = ring, index = idx, length = len, counts = counts, sum = sums,
+       label_format = "si", x_axis = {ticks_per_point = 120},  -- the tooltip shows "... - 6.6 minutes ago"
+   })
+   local camera_info = charts.surface.setup_camera_widget(camera, surface, chunk, {
+       widget_width = 900, widget_height = 700, zoom_override = player.display_scale / player.display_density_scale,
+   })
+   local configs = charts.interactive.get_hover_buttons(state, camera_info, {player = player})
+   charts.interaction.create_overlay_buttons(camera, configs, {
+       button_style = "my_chart_overlay_button", widget_width = 900, widget_height = 700,
+   })
+   ```
+3. Forward the two GUI events from your own handlers (a mod has one handler per event, so the library never
+   registers them itself). Both return `true` when the element was a chart button:
+   ```lua
+   script.on_event(defines.events.on_gui_hover, function(e) charts.events.handle_gui_hover(e) end)
+   script.on_event(defines.events.on_gui_leave, function(e) charts.events.handle_gui_leave(e) end)
+   ```
+
+Each button carries `tags = {factorio_charts = {chart = state.id, region = region_id}}`; the handlers look the
+state up in a registry filled by `create_line_graph` (module state, not saved: call
+`charts.interactive.register(state)` in `on_load` for states you keep in `storage`). The crosshair objects use
+`players = {player}`, so each player only sees their own; hovering never re-renders the graph.
+
+Details:
+- `get_hover_buttons(state, camera_info, opts)`: `opts.mode = "cell"` (default: each column is split between the
+  series at the midpoints of their y values, so the cell under the pointer is the series nearest in y) or
+  `"column"` (one full-height button per column, markers on every series, tooltip lists all values).
+  `opts.max_buttons` (default 400): when columns x series exceeds it, k = ceil(columns x series / max_buttons)
+  adjacent columns share a button and report the centre column (300 columns x 6 series -> k = 5, 360 buttons).
+  `opts.format_tooltip(cell, state) -> LocalisedString` replaces the default tooltip. Button positions are in GUI
+  units: pass `opts.player` (or `opts.gui_zoom`) unless the camera zoom is `display_scale / display_density_scale`.
+- Rebuild the buttons after `update_line_graph` (the tooltips hold values). An active crosshair follows a redraw
+  to the same column and series.
+- `charts.interactive.set_hover(state, player, cell)` / `clear_hover(state, player)` drive it directly;
+  `options.on_hover(cell, player, state)` and `options.on_hover_leave(player, state)` fire alongside.
+  Cell data: `{column, first_column, last_column, series_name, value, seconds_ago, graph_x, graph_y, color}`.
+- Options on the chart: `hover_series_mode` (`"polygon"` default, one mitred triangle strip per unbroken run, 4
+  objects per hover; `"lines"`, one object per segment), `hover_color` (guide lines, default 60% white),
+  `hover_ttl`, and `camera_zoom` (default 1.5): widths are chosen so the guides are 1 screen px and the hovered
+  series twice as thick as the base line on screen.
+- Without `charts.interactive`: `charts.interaction.create_line_graph_hover_regions(chunk, metadata, opts)` and
+  `charts.interaction.draw_crosshair(surface, chunk, metadata, cell, player, opts)`.
+
+Measured on Factorio 2.1 (900x700 widget, UI scale 1.5): regions + configs 2.0 ms / overlay buttons 3.7 ms at
+100 columns x 6 series (300 buttons), 3.1 ms / 5.6 ms at 300 x 6 (360 buttons, 720 GUI elements); one hover
+0.1-0.3 ms and 4 render objects (lines mode: 0.7 ms, 302 objects).
+
 ## API Reference
 
 ### Surface Management (`charts.surface`)
@@ -162,7 +228,9 @@ metadata on `intervals[i].metadata`.
 | `charts.interaction.create_highlight(surface, region, options)` | Draw highlight rectangle |
 | `charts.interaction.create_tooltip(surface, tile_pos, lines, options)` | Draw tooltip text |
 | `charts.interaction.generate_overlay_buttons(camera_pos, zoom, widget_size, regions)` | Generate button configs for GUI overlay |
-| `charts.interaction.create_overlay_buttons(parent, configs, options)` | Create z-ordered buttons on a camera widget |
+| `charts.interaction.create_overlay_buttons(parent, configs, options)` | Create z-ordered buttons on a camera widget (`raise_hover_events`, per-config `tags`) |
+| `charts.interaction.create_line_graph_hover_regions(chunk, metadata, opts)` | Crosshair regions (`"crosshair_cell"` / `"crosshair_column"`) |
+| `charts.interaction.draw_crosshair(surface, chunk, metadata, cell, player, opts)` | Draw a crosshair for one player |
 
 ### Interactive Charts (`charts.interactive`)
 
@@ -172,7 +240,11 @@ metadata on `intervals[i].metadata`.
 | `charts.interactive.update_line_graph(state, options)` | Update with new data |
 | `charts.interactive.create_bar_chart(surface, chunk, options)` | Create interactive bar chart with state |
 | `charts.interactive.update_bar_chart(state, options)` | Update with new data |
-| `charts.interactive.on_hover(state, region_id, player)` | Handle hover event |
+| `charts.interactive.on_hover(state, region_id, player)` | Handle hover event (highlight + rendered tooltip) |
+| `charts.interactive.get_hover_buttons(state, camera_info, opts)` | Tagged overlay button configs for crosshair hover |
+| `charts.interactive.set_hover(state, player, cell)` / `clear_hover(state, player)` | Show / remove a player's crosshair |
+| `charts.interactive.get_hover_regions(state)` | Crosshair regions for the current data |
+| `charts.interactive.register(state)` / `unregister` / `get_state(id)` | Registry the GUI hover handlers use |
 | `charts.interactive.on_click(state, region_id, button, player)` | Handle click event |
 | `charts.interactive.toggle_series(state, series_name)` | Toggle series visibility |
 | `charts.interactive.destroy(state)` | Clean up all resources |
@@ -195,6 +267,8 @@ metadata on `intervals[i].metadata`.
 | `charts.events.unregister()` | Unregister event handlers |
 | `charts.events.is_registered()` | Check if events are registered |
 | `charts.events.get_tick_handler()` | Get the tick handler function |
+| `charts.events.handle_gui_hover(event)` | Forward `on_gui_hover`: draws the crosshair of a tagged chart button |
+| `charts.events.handle_gui_leave(event)` | Forward `on_gui_leave`: clears it (only for the region being left) |
 
 ### Colors & Formatting
 
@@ -205,6 +279,7 @@ metadata on `intervals[i].metadata`.
 | `charts.format.time_label(seconds)` | Format as "30s", "2.5m", "15m", "2.5h" (one decimal below 10 of a unit) |
 | `charts.format.percent_label(value)` | Format as percentage |
 | `charts.format.si_label(value)` | Format as "950", "1.2k", "16k", "1.2M" (production-graph style) |
+| `charts.format.time_ago(seconds)` | Format as "42 seconds ago", "6.6 minutes ago", "1.3 hours ago" |
 
 ### Backward Compatibility
 

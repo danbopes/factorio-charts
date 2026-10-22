@@ -490,7 +490,8 @@ end
 local function draw_hover(state, player, cell)
 	return crosshair.draw(state.surface, state.chunk, state.metadata, cell, player, {
 		layout = ensure_layout(state),
-		line_width = state.options.line_width,
+		camera_zoom = state.options.camera_zoom,
+		base_line_width = state.options.line_width,
 		series_mode = state.options.hover_series_mode,
 		color = state.options.hover_color,
 		ttl = state.options.hover_ttl,

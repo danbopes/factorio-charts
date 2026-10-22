@@ -33,8 +33,9 @@ factorio-charts/
 │   └── time-series.lua             Multi-resolution time series with cascading aggregation
 ├── interaction/
 │   ├── interaction.lua             Hit testing, coordinate transforms, highlights/tooltips
-│   ├── interactive-chart.lua       High-level wrapper with state management
-│   └── events.lua                  Event handler registration
+│   ├── interactive-chart.lua       High-level wrapper with state management, hover registry
+│   ├── crosshair.lua               Production-graph crosshair: hover regions, per-player drawing, tooltips
+│   └── events.lua                  Event handler registration, on_gui_hover/on_gui_leave forwarding
 └── tests/
 ```
 
@@ -54,8 +55,8 @@ factorio-charts/
 | `charts.colors` | Color palette: `get_series_colors`, `get_series_color`, `get_grid_color`, `get_label_color`, `get_max_series` |
 | `charts.format` | Formatting: `time_label`, `percent_label`, `time_detailed`, `si_label` |
 | `charts.interaction` | Hit testing, coordinate transforms, highlights, tooltips, overlay buttons |
-| `charts.interactive` | High-level interactive chart wrappers: `create_line_graph`, `on_hover`, `destroy`, etc. |
-| `charts.events` | Event registration: `register`, `unregister`, `is_registered`, `get_tick_handler` |
+| `charts.interactive` | High-level interactive chart wrappers: `create_line_graph`, `on_hover`, `get_hover_buttons`, `set_hover`, `destroy`, etc. |
+| `charts.events` | Event registration: `register`, `unregister`, `is_registered`, `get_tick_handler`, `handle_gui_hover`, `handle_gui_leave` |
 | `charts.time_series` | Time series data: `create`, `add_datapoint`, `get_average`, `clear` |
 
 ### Key Concepts
@@ -169,6 +170,20 @@ local created = charts.interaction.create_overlay_buttons(parent, button_configs
     widget_height = 700,
 })
 ```
+
+**Crosshair hover (line graphs):** `interaction/crosshair.lua` builds button regions from the metadata contract
+(`columns`, `plot`, `x_positions`, `series_order` bottom-most first, `seconds_ago`) and draws the per-player
+crosshair (`players = {player}`; the thick series is one `draw_polygon` triangle strip per unbroken run by
+default). Consumer wiring, three parts: a transparent button style in data.lua (empty graphical sets, padding 0,
+minimal size 1); `charts.interactive.get_hover_buttons(state, camera_info, {player = player})` passed to
+`charts.interaction.create_overlay_buttons(camera, configs, {button_style = ...})`; and the consumer's own
+`script.on_event` handlers for `on_gui_hover` / `on_gui_leave` calling `charts.events.handle_gui_hover(e)` /
+`handle_gui_leave(e)`. Buttons are tagged `{factorio_charts = {chart = state.id, region = region_id}}`; states
+register by id in a module table (give `options.id` so ids survive save/load, and `charts.interactive.register`
+storage-held states in `on_load`). Leave events can arrive after the next hover, so `handle_gui_leave` only clears
+the crosshair of the region being left. Region ids are `xh_<column>[_<series>]`, stable across rebuilds. The
+FactorioTest run is headless with no player, so the per-player tests in `tests/crosshair_test.lua` skip there; the
+lab's `chartlab` mod repeats them on a graphical host (`remote.call("chartlab", "verify_hover", 1)`).
 
 **Time Series:** Multi-resolution data storage with cascading aggregation (like RRDtool):
 ```lua

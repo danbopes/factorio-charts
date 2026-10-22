@@ -316,8 +316,8 @@ test("set_hover draws for that player only and clear_hover removes it", function
 	local entry = state.hover[player.index]
 	assert.is_not_nil(entry)
 	assert.equals(region.id, entry.region_id)
-	-- vertical + horizontal + marker + 19 thick segments
-	assert.equals(22, #entry.objects)
+	-- vertical + horizontal + marker + one polygon ribbon for the thick series
+	assert.equals(4, #entry.objects)
 	assert.is_true(all_valid(entry.objects))
 	for _, obj in ipairs(entry.objects) do
 		local players = obj.players
@@ -346,12 +346,13 @@ test("set_hover replaces the previous crosshair of the same player", function()
 	charts.interactive.destroy(state)
 end)
 
-test("polygon series mode draws one object per unbroken run", function()
+test("lines series mode draws the thick series one segment at a time", function()
 	local player = game.players[1]
 	if not player then return skip_without_player() end
-	local state = make_state("test-crosshair-polygon", {hover_series_mode = "polygon"})
+	local state = make_state("test-crosshair-lines", {hover_series_mode = "lines"})
 	charts.interactive.set_hover(state, player, charts.interactive.get_hover_regions(state)[1])
-	assert.equals(4, #state.hover[player.index].objects)
+	-- vertical + horizontal + marker + 19 segments
+	assert.equals(22, #state.hover[player.index].objects)
 	charts.interactive.destroy(state)
 end)
 
