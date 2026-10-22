@@ -13,7 +13,7 @@ Tests require the `factorio-test` mod (optional dependency). Two test frameworks
 1. **factorio-test (interactive)**: Load mod in Factorio, click "Run Tests" in GUI
 2. **factorio-test-harness (automated)**: Command-line testing via the harness
 
-Test files are in `tests/` and registered in `tests/init.lua` (for factorio-test) and `tests/harness_init.lua` (for harness).
+Test files are in `tests/` and registered in `tests/init.lua` (for factorio-test) and `tests/harness_init.lua` (for harness). FactorioTest 3.x needs `load_luassert = true` (passed in `tests/init.lua`) for the global `assert` the tests use. The library's `control.lua` does not require `tests/init.lua`, so a runner mod has to register the files.
 
 ## Architecture
 
@@ -52,7 +52,7 @@ factorio-charts/
 | `charts.surface` | Surface/chunk management: `create`, `allocate_chunk`, `free_chunk`, `get_camera_params`, etc. |
 | `charts.render` | Chart rendering: `line_graph`, `stacked_bars`, `time_series`, `*_with_metadata`, `*_with_overlays` |
 | `charts.colors` | Color palette: `get_series_colors`, `get_series_color`, `get_grid_color`, `get_label_color`, `get_max_series` |
-| `charts.format` | Formatting: `time_label`, `percent_label`, `time_detailed` |
+| `charts.format` | Formatting: `time_label`, `percent_label`, `time_detailed`, `si_label` |
 | `charts.interaction` | Hit testing, coordinate transforms, highlights, tooltips, overlay buttons |
 | `charts.interactive` | High-level interactive chart wrappers: `create_line_graph`, `on_hover`, `destroy`, etc. |
 | `charts.events` | Event registration: `register`, `unregister`, `is_registered`, `get_tick_handler` |
@@ -69,6 +69,8 @@ factorio-charts/
 - Iteration order is `index+1 → length`, then `1 → index` for chronological display
 
 **Rendering Coordinates**: Graphs use pixel-based viewport dimensions (default 900x700) converted to tile coordinates (divide by 32). Graph area has margins for axis labels.
+
+**Axes (opt-in)**: `x_axis = {ticks_per_point, format, labels, grid}` adds "minutes ago" labels under the plot (newest = 0 at the right edge, plot bottom moves up 0.7 tile); `label_format = "si"`, `grid_lines`, `y_range = "zero"` and `nice_ticks` shape the Y axis. Defaults (`x_axis = false`, 5 grid lines, no nice ticks) keep 1.2.0 renders identical; `tests/axes_test.lua` checks that. Metadata adds `columns`, `x_positions`, `seconds_ago`, `plot`, `series_order` (bottom-most first), `y_ticks`, `x_labels`: hover code (crosshair) builds on these names, so keep them stable. Label helpers in `core/format.lua` take an optional `decimals` so the renderer can keep neighbouring ticks distinct.
 
 **TTL-Based Cleanup**: All rendered objects use `time_to_live` in ticks. No manual cleanup needed for graph lines/text - they auto-expire.
 
@@ -188,7 +190,8 @@ charts.time_series.add_datapoint(intervals, {series1 = 50, series2 = 75})
 local ordered_sums, hit_regions = charts.render.time_series(surface, intervals, 1, {
     selected_series = nil,  -- or {series1 = true, series2 = false}
     y_range = {0, 100},     -- fixed range, or nil for auto-scale
-    label_format = "percent", -- or "time"
+    label_format = "percent", -- or "time", "si"
+    x_axis = {format = "auto"}, -- optional; ticks_per_point defaults to the interval's ticks
     viewport_width = 900,
     viewport_height = 700,
 })

@@ -41,8 +41,8 @@ local ordered_sums, line_ids = charts.render.line_graph(surface_data.surface, ch
     length = buffer_length,       -- Ring buffer capacity
     counts = sample_counts,       -- {[series_name]: count}
     sum = series_sums,            -- {[series_name]: total}
-    y_range = {0, 100},           -- Optional fixed range (nil for auto-scale)
-    label_format = "percent",     -- "percent", "time", or function(value) -> string
+    y_range = {0, 100},           -- Optional fixed range, "zero" (min pinned at 0), or nil for auto-scale
+    label_format = "percent",     -- "percent", "time", "si", or function(value) -> string
     selected_series = nil,        -- Filter: nil=all, {[name]: false}=hide
     ttl = 360,                    -- Render lifetime in ticks
 })
@@ -79,6 +79,50 @@ local camera_widget = parent.add{
     zoom = camera.zoom,
 }
 ```
+
+## Axes and number formatting
+
+Line graphs can look like Factorio's Production statistics graph. All of these are opt-in; without them a
+render is identical to 1.2.0.
+
+```lua
+charts.render.line_graph(surface, chunk, {
+    data = ring_buffer, index = idx, length = len, counts = counts, sum = sums,
+    label_format = "si",          -- Y labels "0", "16k", "1.2M"
+    grid_lines = 8,               -- horizontal grid lines incl. top and bottom (default 5)
+    y_range = "zero",             -- auto max, min pinned at 0 ({min, max} stays a fixed range)
+    nice_ticks = true,            -- round the auto range to 1/2/2.5/5 x 10^k steps (default false)
+    x_axis = {                    -- default false: no X labels
+        ticks_per_point = 60,     -- game ticks per ring-buffer slot (time_series fills it from interval.ticks)
+        format = "auto",          -- "auto" | "seconds" | "minutes" | "hours" | function(seconds_ago) -> string
+        labels = "auto",          -- "auto" (>= 40 px apart at zoom 1) or a maximum label count
+        grid = false,             -- vertical grid lines at the labels
+    },
+})
+```
+
+The X axis counts time backwards: the newest slot is "0" at the right edge and a 600 x 1 s buffer reads "10"
+(minutes) at the left, with labels every 0.5. "auto" picks seconds below 2 minutes, minutes below 2 hours,
+hours above. The plot shrinks by 0.7 tile to make room for the label row. "si" and "time" Y labels add decimals
+when two neighbouring ticks would otherwise read the same.
+
+`render_line_graph_with_metadata` returns, besides the 1.2.0 fields (`graph_*`, `min_y`, `max_y`, `dx`, `dy`,
+`point_positions`):
+
+| Field | Meaning |
+|-------|---------|
+| `columns` | Number of ring-buffer slots drawn (= `length`) |
+| `x_positions[i]` | Plot x of column i in chunk-relative tiles, 1 = oldest, `columns` = newest |
+| `seconds_ago[i]` | Age of column i in seconds (`(columns - i) * ticks_per_point / 60`); nil without `x_axis` |
+| `plot` | `{left, top, right, bottom}`: the plot rectangle, chunk-relative, without the label gutters |
+| `series_order` | `{name, color_index}` per drawn series, bottom-most first (the last entry is drawn on top) |
+| `y_ticks` | `{value, y, text}` per horizontal grid line, bottom first |
+| `x_labels` | `{seconds_ago, value, text, x}` per X label, newest ("0") first; nil without `x_axis` |
+| `x_unit`, `x_step`, `ticks_per_point` | Display unit, label step in that unit, ticks per slot; nil without `x_axis` |
+| `label_format` | The Y label format in use |
+
+`charts.render.time_series` passes `x_axis`, `grid_lines`, `nice_ticks` and `y_range` through and caches the
+metadata on `intervals[i].metadata`.
 
 ## API Reference
 
@@ -158,8 +202,9 @@ local camera_widget = parent.add{
 |----------|-------------|
 | `charts.colors.get_series_colors()` | Get the 12-color palette array |
 | `charts.colors.get_series_color(index)` | Get a specific series color |
-| `charts.format.time_label(seconds)` | Format as "30s", "5m", "2.5h" |
+| `charts.format.time_label(seconds)` | Format as "30s", "2.5m", "15m", "2.5h" (one decimal below 10 of a unit) |
 | `charts.format.percent_label(value)` | Format as percentage |
+| `charts.format.si_label(value)` | Format as "950", "1.2k", "16k", "1.2M" (production-graph style) |
 
 ### Backward Compatibility
 
