@@ -121,4 +121,31 @@ function format_module.axis_number(value, decimals)
 	return text
 end
 
+local function plural(amount, unit)
+	if tostring(amount) == "1" then
+		return "1 " .. unit .. " ago"
+	end
+	return amount .. " " .. unit .. "s ago"
+end
+
+-- One decimal like the vanilla production graph tooltip, but "6 minutes" rather than "6.0 minutes".
+local function one_decimal(value)
+	local text = string.format("%.1f", value)
+	return (text:gsub("%.0$", ""))
+end
+
+---Format an age in seconds the way the vanilla production graph tooltip does
+---@param seconds number
+---@return string text "42 seconds ago", "6.6 minutes ago", "1.3 hours ago"
+function format_module.time_ago(seconds)
+	if seconds < 60 then
+		return plural(math.floor(seconds + 0.5), "second")
+	elseif seconds < 3600 then
+		return plural(one_decimal(seconds / 60), "minute")
+	else
+		return plural(one_decimal(seconds / 3600), "hour")
+	end
+end
+
+
 return format_module
