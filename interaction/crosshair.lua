@@ -303,7 +303,7 @@ end
 ---@param metadata table Line graph metadata
 ---@param cell table Region data from create_regions (crosshair_cell or crosshair_column)
 ---@param player LuaPlayer|uint Only this player sees the objects
----@param opts table? {layout?, camera_zoom?: number (default metadata.camera_zoom or 1.5), series_px?: number (twice the base line), base_line_width?: number (1), marker_px?: number (2), marker_color?: Color, series_mode?: "lines"|"polygon" (default "lines": one object per segment, uniform thickness; "polygon": one mitred strip per run, fewer objects but uneven thickness), color?: Color, marker_radius?: number, ttl?: number} color is the guide-line colour
+---@param opts table? {layout?, camera_zoom?: number (wins over metadata.camera_zoom; default 1.5), series_px?: number (twice the base line), base_line_width?: number (1), marker_px?: number (2), marker_color?: Color, series_mode?: "lines"|"polygon" (default "lines": one object per segment, uniform thickness; "polygon": one mitred strip per run, fewer objects but uneven thickness), color?: Color, marker_radius?: number, ttl?: number} color is the guide-line colour
 ---@return LuaRenderObject[] objects
 function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 	opts = opts or {}
@@ -320,7 +320,7 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 	local color = opts.color or GUIDE_COLOR
 	local marker_color = opts.marker_color or WHITE
 	local marker_radius = opts.marker_radius or 0.12
-	local zoom = metadata.camera_zoom or opts.camera_zoom or style.DEFAULT_ZOOM
+	local zoom = opts.camera_zoom or metadata.camera_zoom or style.DEFAULT_ZOOM
 	local guide_width = line_width(1, zoom)
 	local marker_width = line_width(opts.marker_px or 2, zoom)
 	-- Twice the base line as it lands on screen; metadata.line_width is the draw_line width the renderer used.

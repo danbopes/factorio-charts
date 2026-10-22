@@ -393,6 +393,26 @@ test("set_hover replaces the previous crosshair of the same player", function()
 	charts.interactive.destroy(state)
 end)
 
+test("draw_crosshair: opts.camera_zoom wins over metadata.camera_zoom", function()
+	local surface_data = charts.surface.create("test-crosshair-zoom")
+	local chunk = charts.surface.allocate_chunk(surface_data)
+	local metadata = two_by_two_metadata()
+	metadata.camera_zoom = 1.5
+	local player = game.players[1]
+	if not player then return skip_without_player() end
+	local cell = {column = 1, series_name = "a", graph_x = 2, graph_y = 3}
+	local widths = {}
+	for _, zoom in ipairs({1, 2}) do
+		local objects = charts.interaction.draw_crosshair(surface_data.surface, chunk, metadata, cell, player, {camera_zoom = zoom})
+		widths[zoom] = objects[1].width
+		for _, obj in ipairs(objects) do obj.destroy() end
+	end
+	assert.are_not.equal(widths[1], widths[2])
+	assert.is_true(math.abs(widths[1] - charts.style.line_width(1, 1)) < 1e-6)
+	assert.is_true(math.abs(widths[2] - charts.style.line_width(1, 2)) < 1e-6)
+	charts.surface.free_chunk(surface_data, chunk)
+end)
+
 test("polygon series mode draws the thick series as one strip per unbroken run", function()
 	local player = game.players[1]
 	if not player then return skip_without_player() end

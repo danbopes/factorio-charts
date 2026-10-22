@@ -248,7 +248,8 @@ Details:
   `hover_ttl`, and `camera_zoom` (default 1.5): widths are chosen so the guides are 1 screen px and the hovered
   series twice as thick as the base line on screen.
 - Without `charts.interactive`: `charts.interaction.create_line_graph_hover_regions(chunk, metadata, opts)` and
-  `charts.interaction.draw_crosshair(surface, chunk, metadata, cell, player, opts)`.
+  `charts.interaction.draw_crosshair(surface, chunk, metadata, cell, player, opts)` (`opts.camera_zoom` wins over
+  `metadata.camera_zoom`, then 1.5).
 
 Measured on Factorio 2.1 (900x700 widget, UI scale 1.5): regions + configs 2.0 ms / overlay buttons 3.7 ms at
 100 columns x 6 series (300 buttons), 3.1 ms / 5.6 ms at 300 x 6 (360 buttons, 720 GUI elements); one hover
