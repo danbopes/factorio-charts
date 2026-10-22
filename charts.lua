@@ -59,6 +59,7 @@ charts.format = {
 	percent_label = format.percent_label,
 	time_detailed = format.time_detailed,
 	si_label = format.si_label,
+	time_ago = format.time_ago,
 }
 
 -- Interaction primitives
@@ -68,6 +69,8 @@ charts.interaction = {
 	hit_test = interaction.hit_test,
 	hit_test_all = interaction.hit_test_all,
 	create_line_graph_hit_regions = interaction.create_line_graph_hit_regions,
+	create_line_graph_hover_regions = interaction.create_line_graph_hover_regions,
+	draw_crosshair = interaction.draw_crosshair,
 	create_bar_chart_hit_regions = interaction.create_bar_chart_hit_regions,
 	create_legend_hit_regions = interaction.create_legend_hit_regions,
 	create_highlight = interaction.create_highlight,
@@ -94,6 +97,13 @@ charts.interactive = {
 	get_overlay_buttons = interactive_chart.get_overlay_buttons,
 	hit_test = interactive_chart.hit_test,
 	hit_test_screen = interactive_chart.hit_test_screen,
+	get_hover_buttons = interactive_chart.get_hover_buttons,
+	get_hover_regions = interactive_chart.get_hover_regions,
+	set_hover = interactive_chart.set_hover,
+	clear_hover = interactive_chart.clear_hover,
+	register = interactive_chart.register,
+	unregister = interactive_chart.unregister,
+	get_state = interactive_chart.get_state,
 }
 
 -- Event registration
@@ -102,6 +112,8 @@ charts.events = {
 	unregister = events.unregister,
 	is_registered = events.is_registered,
 	get_tick_handler = events.get_tick_handler,
+	handle_gui_hover = events.handle_gui_hover,
+	handle_gui_leave = events.handle_gui_leave,
 }
 
 -- Time series data management

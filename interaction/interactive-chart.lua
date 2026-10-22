@@ -5,6 +5,7 @@ local line_graph = require("charts/line-graph")
 local bar_chart = require("charts/bar-chart")
 local interaction = require("interaction/interaction")
 local format_module = require("core/format")
+local crosshair = require("interaction/crosshair")
 
 ---@class InteractiveChartState
 ---@field id string Unique chart identifier
@@ -20,11 +21,43 @@ local format_module = require("core/format")
 ---@field options table Last render options
 ---@field metadata table Last render metadata
 ---@field ordered_sums table? Last ordered_sums (for line graphs)
+---@field hover table<uint, table> Crosshair per player index: {region_id, column, series_name, objects}
+---@field hover_opts table? Options of the last get_hover_buttons call (mode, max_buttons, ticks_per_point)
+---@field hover_regions HitRegion[]? Crosshair regions for the current metadata, built on demand
+---@field hover_region_index table<string, HitRegion>? hover_regions by id
+---@field hover_layout CrosshairLayout? Column geometry for the current metadata
 
 local chart_id_counter = 0
 local function generate_chart_id()
 	chart_id_counter = chart_id_counter + 1
 	return "chart_" .. chart_id_counter
+end
+
+-- GUI events only carry tags, so the hover handlers find the chart here. Module state is not saved: a consumer
+-- that keeps states in storage re-registers them in on_load (ids from options.id stay the same across loads,
+-- generated ids do not).
+local registry = {}
+
+---Make a state reachable from charts.events.handle_gui_hover/handle_gui_leave
+---@param state InteractiveChartState
+function interactive_chart.register(state)
+	if state and state.id then
+		registry[state.id] = state
+		state.hover = state.hover or {}
+	end
+end
+
+---@param state InteractiveChartState
+function interactive_chart.unregister(state)
+	if state and state.id and registry[state.id] == state then
+		registry[state.id] = nil
+	end
+end
+
+---@param id string
+---@return InteractiveChartState?
+function interactive_chart.get_state(id)
+	return registry[id]
 end
 
 -- Internal helper to clear existing render objects
@@ -64,7 +97,7 @@ end
 ---@return InteractiveChartState state The chart state
 function interactive_chart.create_line_graph(surface, chunk, options)
 	local state = {
-		id = generate_chart_id(),
+		id = options.id or generate_chart_id(),
 		chart_type = "line_graph",
 		chunk = chunk,
 		surface = surface,
@@ -78,7 +111,9 @@ function interactive_chart.create_line_graph(surface, chunk, options)
 		options = options,
 		metadata = nil,
 		ordered_sums = nil,
+		hover = {},
 	}
+	interactive_chart.register(state)
 
 	-- Initial render
 	interactive_chart.redraw_line_graph(state)
@@ -113,6 +148,11 @@ function interactive_chart.redraw_line_graph(state)
 	else
 		state.hit_regions = {}
 	end
+
+	state.hover_regions = nil
+	state.hover_region_index = nil
+	state.hover_layout = nil
+	interactive_chart.refresh_hover(state)
 end
 
 ---Update an interactive line graph with new data
@@ -134,7 +174,7 @@ end
 ---@return InteractiveChartState state The chart state
 function interactive_chart.create_bar_chart(surface, chunk, options)
 	local state = {
-		id = generate_chart_id(),
+		id = options.id or generate_chart_id(),
 		chart_type = "bar_chart",
 		chunk = chunk,
 		surface = surface,
@@ -148,7 +188,9 @@ function interactive_chart.create_bar_chart(surface, chunk, options)
 		options = options,
 		metadata = nil,
 		ordered_sums = nil,
+		hover = {},
 	}
+	interactive_chart.register(state)
 
 	-- Initial render
 	interactive_chart.redraw_bar_chart(state)
@@ -372,6 +414,14 @@ function interactive_chart.destroy(state)
 	clear_render_objects(state)
 	clear_highlights(state)
 	clear_tooltips(state)
+	for _, entry in pairs(state.hover or {}) do
+		interaction.destroy_render_objects(entry.objects or {})
+	end
+	state.hover = {}
+	state.hover_regions = nil
+	state.hover_region_index = nil
+	state.hover_layout = nil
+	interactive_chart.unregister(state)
 end
 
 ---Get overlay button configurations for a camera widget
@@ -407,6 +457,202 @@ end
 function interactive_chart.hit_test_screen(state, camera_position, camera_zoom, widget_size, screen_pos)
 	local tile_pos = interaction.screen_to_tile(camera_position, camera_zoom, widget_size, screen_pos)
 	return interaction.hit_test(state.hit_regions, tile_pos)
+end
+
+-- ============================================================================
+-- Crosshair hover (line graphs)
+-- ============================================================================
+
+local function hover_layout_opts(state)
+	local hover_opts = state.hover_opts or {}
+	local x_axis = state.options.x_axis
+	return {
+		mode = hover_opts.mode,
+		max_buttons = hover_opts.max_buttons,
+		-- MERGE(b1): with work package A the metadata carries seconds_ago itself and this fallback goes unused.
+		ticks_per_point = hover_opts.ticks_per_point or (type(x_axis) == "table" and x_axis.ticks_per_point or nil),
+		series_order = state.ordered_sums,
+	}
+end
+
+local function ensure_layout(state)
+	if not state.hover_layout and state.metadata and state.metadata.point_positions then
+		state.hover_layout = crosshair.layout(state.metadata, hover_layout_opts(state))
+	end
+	return state.hover_layout
+end
+
+---Crosshair regions for the chart's current data, built on first use after each redraw
+---@param state InteractiveChartState
+---@return HitRegion[]
+function interactive_chart.get_hover_regions(state)
+	if state.chart_type ~= "line_graph" or not state.metadata then
+		return {}
+	end
+	if not state.hover_regions then
+		local opts = hover_layout_opts(state)
+		opts.layout = ensure_layout(state)
+		state.hover_regions = crosshair.create_regions(state.chunk, state.metadata, opts)
+		local index = {}
+		for _, region in ipairs(state.hover_regions) do
+			index[region.id] = region
+		end
+		state.hover_region_index = index
+	end
+	return state.hover_regions
+end
+
+local function draw_hover(state, player, cell)
+	return crosshair.draw(state.surface, state.chunk, state.metadata, cell, player, {
+		layout = ensure_layout(state),
+		line_width = state.options.line_width,
+		series_mode = state.options.hover_series_mode,
+		color = state.options.hover_color,
+		ttl = state.options.hover_ttl,
+	})
+end
+
+local function destroy_hover_entry(entry)
+	if entry then
+		interaction.destroy_render_objects(entry.objects or {})
+	end
+end
+
+---Show the crosshair for one player: vertical line at the column, horizontal line and marker at the point, the
+---hovered series redrawn twice as thick. Other players see nothing. Does not re-render the graph.
+---@param state InteractiveChartState
+---@param player LuaPlayer
+---@param cell table A crosshair region or its data
+function interactive_chart.set_hover(state, player, cell)
+	if not state or not player or not player.valid or not cell or not state.metadata then
+		return
+	end
+	local data = cell.data or cell
+	if not data.column then
+		return
+	end
+	state.hover = state.hover or {}
+	destroy_hover_entry(state.hover[player.index])
+	state.hover[player.index] = {
+		region_id = crosshair.region_id(data.column, data.series_name),
+		column = data.column,
+		series_name = data.series_name,
+		objects = draw_hover(state, player, data),
+	}
+	if state.options.on_hover then
+		state.options.on_hover(data, player, state)
+	end
+end
+
+---Remove a player's crosshair
+---@param state InteractiveChartState
+---@param player LuaPlayer|uint Player or player index
+function interactive_chart.clear_hover(state, player)
+	if not state or not state.hover or not player then
+		return
+	end
+	local index = type(player) == "number" and player or player.index
+	local entry = state.hover[index]
+	if not entry then
+		return
+	end
+	destroy_hover_entry(entry)
+	state.hover[index] = nil
+	if state.options.on_hover_leave then
+		local player_object = type(player) == "number" and game.get_player(player) or player
+		state.options.on_hover_leave(player_object, state)
+	end
+end
+
+---Redraw every player's crosshair against the current data (called after a redraw). A crosshair whose
+---region no longer exists is removed.
+---@param state InteractiveChartState
+function interactive_chart.refresh_hover(state)
+	if not state.hover or not next(state.hover) then
+		return
+	end
+	local regions_index = nil
+	if state.metadata then
+		interactive_chart.get_hover_regions(state)
+		regions_index = state.hover_region_index
+	end
+	for player_index, entry in pairs(state.hover) do
+		destroy_hover_entry(entry)
+		local region = regions_index and regions_index[entry.region_id]
+		local player = game.get_player(player_index)
+		if region and player and player.valid then
+			entry.objects = draw_hover(state, player, region.data)
+		else
+			state.hover[player_index] = nil
+		end
+	end
+end
+
+---Find a crosshair region by id
+---@param state InteractiveChartState
+---@param region_id string
+---@return HitRegion?
+function interactive_chart.get_hover_region(state, region_id)
+	interactive_chart.get_hover_regions(state)
+	return state.hover_region_index and state.hover_region_index[region_id]
+end
+
+---Overlay button configs for crosshair hover, ready for charts.interaction.create_overlay_buttons
+---
+---Each config carries tags {factorio_charts = {chart = state.id, region = region.id}}, a native tooltip and
+---raise_hover_events = true. Positions are in GUI units: camera tiles are 32 * camera_zoom * density / scale GUI
+---units wide, so pass opts.player (or opts.gui_zoom) unless the camera uses Cybersyn's zoom formula
+---display_scale / display_density_scale, for which the default gui_zoom of 1 is exact.
+---@param state InteractiveChartState
+---@param camera_info table From setup_camera_widget: {position, zoom, widget_width, widget_height}
+---@param opts table? {mode?: "cell"|"column", max_buttons?: number, ticks_per_point?: number, format_tooltip?: fun(cell, state): LocalisedString, player?: LuaPlayer, gui_zoom?: number}
+---@return table[] button_configs
+function interactive_chart.get_hover_buttons(state, camera_info, opts)
+	opts = opts or {}
+	if not camera_info or state.chart_type ~= "line_graph" then
+		return {}
+	end
+
+	local previous = state.hover_opts
+	state.hover_opts = {mode = opts.mode, max_buttons = opts.max_buttons, ticks_per_point = opts.ticks_per_point}
+	if not previous or previous.mode ~= opts.mode or previous.max_buttons ~= opts.max_buttons
+		or previous.ticks_per_point ~= opts.ticks_per_point then
+		state.hover_regions = nil
+		state.hover_region_index = nil
+		state.hover_layout = nil
+	end
+	local regions = interactive_chart.get_hover_regions(state)
+
+	local gui_zoom = opts.gui_zoom
+	if not gui_zoom then
+		local player = opts.player
+		if player and player.valid and camera_info.zoom then
+			gui_zoom = camera_info.zoom * player.display_density_scale / player.display_scale
+		else
+			gui_zoom = 1
+		end
+	end
+
+	local configs = interaction.generate_overlay_buttons(
+		camera_info.position,
+		gui_zoom,
+		{width = camera_info.widget_width, height = camera_info.widget_height},
+		regions
+	)
+
+	local label_format = state.options.label_format
+	local format_tooltip = opts.format_tooltip
+	for _, config in ipairs(configs) do
+		local data = config.region.data
+		if format_tooltip then
+			config.tooltip = format_tooltip(data, state)
+		else
+			config.tooltip = crosshair.default_tooltip(data, label_format)
+		end
+		config.tags = {factorio_charts = {chart = state.id, region = config.region_id}}
+		config.raise_hover_events = true
+	end
+	return configs
 end
 
 return interactive_chart
