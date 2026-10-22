@@ -17,90 +17,28 @@ local WHITE = {r = 1, g = 1, b = 1, a = 1}
 ---@field dx number Tiles between columns
 ---@field x_positions number[] Plot x of each column (1 = oldest)
 ---@field seconds_ago number[]? Age of each column, nil when the chart has no time axis
----@field series table[] {name, color_index, color, order} in draw order
+---@field series table[] {name, color_index, color, order} bottom-most first
 ---@field by_column table<number, table<string, table>> column -> series name -> point
 
-local function plot_rect(metadata)
-	-- MERGE(b1): metadata.plot comes from work package A; 1.2.0 metadata only has the graph_* fields.
-	if metadata.plot then
-		return metadata.plot
-	end
-	return {
-		left = metadata.graph_left,
-		top = metadata.graph_top,
-		right = metadata.graph_right,
-		bottom = metadata.graph_bottom,
-	}
-end
-
-local function column_count(metadata, plot)
-	-- MERGE(b1): metadata.columns comes from work package A.
-	if metadata.columns then
-		return metadata.columns
-	end
-	local dx = metadata.dx
-	if not dx or dx <= 0 or dx == math.huge or dx ~= dx then
-		return 1
-	end
-	return math.floor((plot.right - plot.left) / dx + 0.5) + 1
-end
-
-local function normalise_series(metadata, opts)
-	-- MERGE(b1): metadata.series_order comes from work package A. Until then the interactive wrapper passes its
-	-- ordered_sums (same shape: {name, color_index}) through opts.series_order.
-	local source = metadata.series_order or opts.series_order
-	local series = {}
-	if source then
-		for i, entry in ipairs(source) do
-			local name = type(entry) == "table" and entry.name or entry
-			if metadata.point_positions[name] then
-				local color_index = type(entry) == "table" and entry.color_index or i
-				series[#series + 1] = {
-					name = name,
-					color_index = color_index,
-					color = colors_module.get_series_color(color_index),
-				}
-			end
-		end
-	else
-		local names = {}
-		for name in pairs(metadata.point_positions) do
-			names[#names + 1] = name
-		end
-		table.sort(names)
-		for i, name in ipairs(names) do
-			series[i] = {name = name, color_index = i, color = colors_module.get_series_color(i)}
-		end
-	end
-	for i, entry in ipairs(series) do
-		entry.order = i
-	end
-	return series
-end
-
 ---Collect the column geometry the crosshair needs from line graph metadata
----@param metadata table From line_graph.render_with_metadata
----@param opts table? {series_order?, ticks_per_point?}
+---@param metadata table From line_graph.render_with_metadata (columns, plot, x_positions, series_order, seconds_ago)
 ---@return CrosshairLayout
-function crosshair.layout(metadata, opts)
-	opts = opts or {}
-	local plot = plot_rect(metadata)
-	local columns = column_count(metadata, plot)
+function crosshair.layout(metadata)
+	local plot = metadata.plot
+	local columns = metadata.columns
+	local x_positions = metadata.x_positions
 	local dx = columns > 1 and (plot.right - plot.left) / (columns - 1) or (plot.right - plot.left)
 
-	-- MERGE(b1): x_positions and seconds_ago come from work package A.
-	local x_positions = metadata.x_positions
-	if not x_positions then
-		x_positions = {}
-		for i = 1, columns do
-			x_positions[i] = plot.left + (i - 1) * dx
-		end
-	end
-	local seconds_ago = metadata.seconds_ago
-	if not seconds_ago and opts.ticks_per_point then
-		seconds_ago = {}
-		for i = 1, columns do
-			seconds_ago[i] = (columns - i) * opts.ticks_per_point / 60
+	-- metadata.series_order is bottom-most first; order is that index, so a higher order is drawn on top.
+	local series = {}
+	for _, entry in ipairs(metadata.series_order) do
+		if metadata.point_positions[entry.name] then
+			series[#series + 1] = {
+				name = entry.name,
+				color_index = entry.color_index,
+				color = colors_module.get_series_color(entry.color_index),
+				order = #series + 1,
+			}
 		end
 	end
 
@@ -123,8 +61,8 @@ function crosshair.layout(metadata, opts)
 		columns = columns,
 		dx = dx,
 		x_positions = x_positions,
-		seconds_ago = seconds_ago,
-		series = normalise_series(metadata, opts),
+		seconds_ago = metadata.seconds_ago,
+		series = series,
 		by_column = by_column,
 	}
 end
@@ -164,17 +102,17 @@ end
 ---reports its centre column: fewer GUI elements at the price of a coarser x resolution.
 ---@param chunk table Chunk with coord
 ---@param metadata table Line graph metadata from render_with_metadata
----@param opts table? {mode?: "cell"|"column", max_buttons?: number, series_order?: table[], ticks_per_point?: number, layout?: CrosshairLayout}
+---@param opts table? {mode?: "cell"|"column", max_buttons?: number, layout?: CrosshairLayout}
 ---@return HitRegion[] regions
 ---@return CrosshairLayout? layout
 function crosshair.create_regions(chunk, metadata, opts)
 	opts = opts or {}
 	local regions = {}
-	if not chunk or not chunk.coord or not metadata or not metadata.point_positions then
+	if not chunk or not chunk.coord or not metadata or not metadata.point_positions or not metadata.plot then
 		return regions, nil
 	end
 
-	local layout = opts.layout or crosshair.layout(metadata, opts)
+	local layout = opts.layout or crosshair.layout(metadata)
 	local plot = layout.plot
 	local columns = layout.columns
 	local series = layout.series
@@ -198,7 +136,9 @@ function crosshair.create_regions(chunk, metadata, opts)
 
 			if column_mode then
 				local values = {}
-				for _, entry in ipairs(series) do
+				-- Top-drawn series first, the order the legend and ordered_sums use.
+				for s = #series, 1, -1 do
+					local entry = series[s]
 					local point = points[entry.name]
 					if point then
 						values[#values + 1] = {
@@ -233,13 +173,22 @@ function crosshair.create_regions(chunk, metadata, opts)
 						visible[#visible + 1] = {entry = entry, point = point}
 					end
 				end
-				-- Ties go to the series drawn on top (lowest order), matching what the eye sees.
+				-- Ties go to the series drawn on top (highest order), matching what the eye sees.
 				table.sort(visible, function(a, b)
 					if a.point.y ~= b.point.y then
 						return a.point.y < b.point.y
 					end
-					return a.entry.order < b.entry.order
+					return a.entry.order > b.entry.order
 				end)
+				-- Overlapping points look like one line, so the one drawn on top takes the whole cell.
+				local distinct = {}
+				for _, item in ipairs(visible) do
+					local previous = distinct[#distinct]
+					if not previous or item.point.y - previous.point.y > EPSILON then
+						distinct[#distinct + 1] = item
+					end
+				end
+				visible = distinct
 
 				local n = #visible
 				for k = 1, n do
@@ -335,16 +284,16 @@ end
 ---@param metadata table Line graph metadata
 ---@param cell table Region data from create_regions (crosshair_cell or crosshair_column)
 ---@param player LuaPlayer|uint Only this player sees the objects
----@param opts table? {layout?, line_width?: number, series_mode?: "lines"|"polygon", color?: Color, marker_radius?: number, marker_width?: number, ttl?: number, series_order?, ticks_per_point?}
+---@param opts table? {layout?, line_width?: number, series_mode?: "lines"|"polygon", color?: Color, marker_radius?: number, marker_width?: number, ttl?: number}
 ---@return LuaRenderObject[] objects
 function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 	opts = opts or {}
 	local objects = {}
-	if not surface or not chunk or not chunk.coord or not metadata or not cell then
+	if not surface or not chunk or not chunk.coord or not metadata or not metadata.plot or not cell then
 		return objects
 	end
 
-	local layout = opts.layout or crosshair.layout(metadata, opts)
+	local layout = opts.layout or crosshair.layout(metadata)
 	local plot = layout.plot
 	local ox, oy = chunk.coord.x, chunk.coord.y
 	local players = {player}
@@ -445,11 +394,7 @@ function crosshair.format_value(value, label_format)
 	elseif label_format == "time" then
 		return format_module.time_detailed(value)
 	elseif label_format == "si" then
-		-- MERGE(b1): format.si_label comes from work package A.
-		if format_module.si_label then
-			return format_module.si_label(value)
-		end
-		return string.format("%.0f", value)
+		return format_module.si_label(value)
 	end
 	return format_module.percent_label(value)
 end

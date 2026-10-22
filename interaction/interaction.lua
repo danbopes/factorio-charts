@@ -102,7 +102,7 @@ end
 ---Create crosshair hover regions for a line graph (see interaction/crosshair.lua)
 ---@param chunk table Chunk with coord
 ---@param metadata table Graph metadata from render_with_metadata
----@param options table? {mode?: "cell"|"column", max_buttons?: number (default 400), series_order?: table[], ticks_per_point?: number}
+---@param options table? {mode?: "cell"|"column", max_buttons?: number (default 400)}
 ---@return HitRegion[] regions Regions of type "crosshair_cell" (or "crosshair_column" in column mode)
 function interaction.create_line_graph_hover_regions(chunk, metadata, options)
 	local regions = crosshair.create_regions(chunk, metadata, options)

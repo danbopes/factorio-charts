@@ -22,7 +22,7 @@ local crosshair = require("interaction/crosshair")
 ---@field metadata table Last render metadata
 ---@field ordered_sums table? Last ordered_sums (for line graphs)
 ---@field hover table<uint, table> Crosshair per player index: {region_id, column, series_name, objects}
----@field hover_opts table? Options of the last get_hover_buttons call (mode, max_buttons, ticks_per_point)
+---@field hover_opts table? Options of the last get_hover_buttons call (mode, max_buttons)
 ---@field hover_regions HitRegion[]? Crosshair regions for the current metadata, built on demand
 ---@field hover_region_index table<string, HitRegion>? hover_regions by id
 ---@field hover_layout CrosshairLayout? Column geometry for the current metadata
@@ -369,13 +369,7 @@ function interactive_chart.format_tooltip(state, region)
 
 	if region.type == "data_point" then
 		lines[1] = region.data.series_name
-		if type(state.options.label_format) == "function" then
-			lines[2] = state.options.label_format(region.data.value)
-		elseif state.options.label_format == "time" then
-			lines[2] = format_module.time_detailed(region.data.value)
-		else
-			lines[2] = format_module.percent_label(region.data.value)
-		end
+		lines[2] = crosshair.format_value(region.data.value, state.options.label_format)
 	elseif region.type == "bar_segment" then
 		lines[1] = region.data.phase_name
 		lines[2] = format_module.time_detailed(region.data.duration)
@@ -463,21 +457,9 @@ end
 -- Crosshair hover (line graphs)
 -- ============================================================================
 
-local function hover_layout_opts(state)
-	local hover_opts = state.hover_opts or {}
-	local x_axis = state.options.x_axis
-	return {
-		mode = hover_opts.mode,
-		max_buttons = hover_opts.max_buttons,
-		-- MERGE(b1): with work package A the metadata carries seconds_ago itself and this fallback goes unused.
-		ticks_per_point = hover_opts.ticks_per_point or (type(x_axis) == "table" and x_axis.ticks_per_point or nil),
-		series_order = state.ordered_sums,
-	}
-end
-
 local function ensure_layout(state)
-	if not state.hover_layout and state.metadata and state.metadata.point_positions then
-		state.hover_layout = crosshair.layout(state.metadata, hover_layout_opts(state))
+	if not state.hover_layout and state.metadata and state.metadata.plot then
+		state.hover_layout = crosshair.layout(state.metadata)
 	end
 	return state.hover_layout
 end
@@ -490,9 +472,12 @@ function interactive_chart.get_hover_regions(state)
 		return {}
 	end
 	if not state.hover_regions then
-		local opts = hover_layout_opts(state)
-		opts.layout = ensure_layout(state)
-		state.hover_regions = crosshair.create_regions(state.chunk, state.metadata, opts)
+		local hover_opts = state.hover_opts or {}
+		state.hover_regions = crosshair.create_regions(state.chunk, state.metadata, {
+			mode = hover_opts.mode,
+			max_buttons = hover_opts.max_buttons,
+			layout = ensure_layout(state),
+		})
 		local index = {}
 		for _, region in ipairs(state.hover_regions) do
 			index[region.id] = region
@@ -605,7 +590,7 @@ end
 ---display_scale / display_density_scale, for which the default gui_zoom of 1 is exact.
 ---@param state InteractiveChartState
 ---@param camera_info table From setup_camera_widget: {position, zoom, widget_width, widget_height}
----@param opts table? {mode?: "cell"|"column", max_buttons?: number, ticks_per_point?: number, format_tooltip?: fun(cell, state): LocalisedString, player?: LuaPlayer, gui_zoom?: number}
+---@param opts table? {mode?: "cell"|"column", max_buttons?: number, format_tooltip?: fun(cell, state): LocalisedString, player?: LuaPlayer, gui_zoom?: number}
 ---@return table[] button_configs
 function interactive_chart.get_hover_buttons(state, camera_info, opts)
 	opts = opts or {}
@@ -614,9 +599,8 @@ function interactive_chart.get_hover_buttons(state, camera_info, opts)
 	end
 
 	local previous = state.hover_opts
-	state.hover_opts = {mode = opts.mode, max_buttons = opts.max_buttons, ticks_per_point = opts.ticks_per_point}
-	if not previous or previous.mode ~= opts.mode or previous.max_buttons ~= opts.max_buttons
-		or previous.ticks_per_point ~= opts.ticks_per_point then
+	state.hover_opts = {mode = opts.mode, max_buttons = opts.max_buttons}
+	if not previous or previous.mode ~= opts.mode or previous.max_buttons ~= opts.max_buttons then
 		state.hover_regions = nil
 		state.hover_region_index = nil
 		state.hover_layout = nil

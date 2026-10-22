@@ -10,9 +10,13 @@ local function skip_without_player()
 end
 
 -- Two series over two columns, plot 2..4 x 1..11. Column 1: a at y=3, b at y=7. Column 2: b at y=4, a at y=5.
+-- Same shape as line_graph metadata; series_order is bottom-most first, so a is drawn on top.
 local function two_by_two_metadata()
 	return {
-		graph_left = 2, graph_right = 4, graph_top = 1, graph_bottom = 11,
+		plot = {left = 2, top = 1, right = 4, bottom = 11},
+		columns = 2,
+		x_positions = {2, 4},
+		series_order = {{name = "b", color_index = 2}, {name = "a", color_index = 1}},
 		dx = 2,
 		point_positions = {
 			a = {{x = 2, y = 3, value = 80, data_index = 1}, {x = 4, y = 5, value = 60, data_index = 2}},
@@ -21,7 +25,6 @@ local function two_by_two_metadata()
 	}
 end
 
-local SERIES_ORDER = {{name = "a", color_index = 1}, {name = "b", color_index = 2}}
 
 local function regions_by_column(regions)
 	local out = {}
@@ -35,7 +38,13 @@ end
 
 local function wide_metadata(columns, series_count)
 	local points = {}
+	local order = {}
+	local x_positions = {}
+	for c = 1, columns do
+		x_positions[c] = 2 + (c - 1) * 0.1
+	end
 	for s = 1, series_count do
+		order[s] = {name = "s" .. s, color_index = s}
 		local list = {}
 		for c = 1, columns do
 			list[c] = {x = 2 + (c - 1) * 0.1, y = 1 + s + (c % 3) * 0.1, value = s * 10 + c, data_index = c}
@@ -43,7 +52,10 @@ local function wide_metadata(columns, series_count)
 		points["s" .. s] = list
 	end
 	return {
-		graph_left = 2, graph_right = 2 + (columns - 1) * 0.1, graph_top = 1, graph_bottom = 20,
+		plot = {left = 2, top = 1, right = 2 + (columns - 1) * 0.1, bottom = 20},
+		columns = columns,
+		x_positions = x_positions,
+		series_order = order,
 		dx = 0.1,
 		point_positions = points,
 	}
@@ -100,9 +112,7 @@ end
 -- ============================================================================
 
 test("hover regions: cells partition each column's plot height", function()
-	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, two_by_two_metadata(), {
-		series_order = SERIES_ORDER,
-	})
+	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, two_by_two_metadata())
 	assert.equals(4, #regions)
 	local by_column = regions_by_column(regions)
 	for column = 1, 2 do
@@ -130,7 +140,7 @@ end)
 
 test("hover regions: the cell under a point belongs to the series nearest in y", function()
 	local metadata = two_by_two_metadata()
-	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata, {series_order = SERIES_ORDER})
+	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata)
 	local ys = {1.2, 3, 4.4, 4.6, 4.9, 5.1, 6.9, 10.9}
 	local column_x = {2.5, 3.5}
 	for column = 1, 2 do
@@ -151,10 +161,9 @@ test("hover regions: the cell under a point belongs to the series nearest in y",
 end)
 
 test("hover regions: cell data carries value, position, colour and stable id", function()
-	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, two_by_two_metadata(), {
-		series_order = SERIES_ORDER,
-		ticks_per_point = 120,
-	})
+	local metadata = two_by_two_metadata()
+	metadata.seconds_ago = {2, 0}
+	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata)
 	local cell
 	for _, region in ipairs(regions) do
 		if region.data.column == 2 and region.data.series_name == "b" then
@@ -171,9 +180,7 @@ test("hover regions: cell data carries value, position, colour and stable id", f
 end)
 
 test("hover regions: chunk offset moves the bounds", function()
-	local regions = charts.interaction.create_line_graph_hover_regions({coord = {x = 64, y = -32}}, two_by_two_metadata(), {
-		series_order = SERIES_ORDER,
-	})
+	local regions = charts.interaction.create_line_graph_hover_regions({coord = {x = 64, y = -32}}, two_by_two_metadata())
 	for _, region in ipairs(regions) do
 		assert.is_true(region.tile_bounds.left >= 66 and region.tile_bounds.right <= 68)
 		assert.is_true(region.tile_bounds.top >= -31 and region.tile_bounds.bottom <= -21)
@@ -183,11 +190,11 @@ end)
 test("hover regions: equal y values do not create empty cells", function()
 	local metadata = two_by_two_metadata()
 	metadata.point_positions.b[1].y = 3
-	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata, {series_order = SERIES_ORDER})
+	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata)
 	local column1 = regions_by_column(regions)[1]
-	for _, region in ipairs(column1) do
-		assert.is_true(region.tile_bounds.bottom > region.tile_bounds.top)
-	end
+	assert.equals(1, #column1)
+	-- The tie goes to a, which is drawn on top.
+	assert.equals("a", column1[1].data.series_name)
 end)
 
 test("hover regions: budget groups adjacent columns", function()
@@ -221,10 +228,7 @@ test("hover regions: default budget is 400 buttons", function()
 end)
 
 test("hover regions: column mode makes one full-height region per column", function()
-	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, two_by_two_metadata(), {
-		mode = "column",
-		series_order = SERIES_ORDER,
-	})
+	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, two_by_two_metadata(), {mode = "column"})
 	assert.equals(2, #regions)
 	for _, region in ipairs(regions) do
 		assert.equals("crosshair_column", region.type)
@@ -238,7 +242,7 @@ end)
 test("hover regions: missing samples leave the column to the series that have one", function()
 	local metadata = two_by_two_metadata()
 	table.remove(metadata.point_positions.a, 2)
-	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata, {series_order = SERIES_ORDER})
+	local regions = charts.interaction.create_line_graph_hover_regions(CHUNK, metadata)
 	local column2 = regions_by_column(regions)[2]
 	assert.equals(1, #column2)
 	assert.equals("b", column2[1].data.series_name)
@@ -269,6 +273,31 @@ test("hover regions from a real render use the rendered point positions", functi
 	local count = 0
 	for _ in pairs(columns) do count = count + 1 end
 	assert.equals(20, count)
+	charts.interactive.destroy(state)
+end)
+
+test("hover regions on an axes render carry seconds_ago and an si tooltip", function()
+	local state = make_state("test-crosshair-axes", {
+		x_axis = {ticks_per_point = 120},
+		label_format = "si",
+		y_range = "zero",
+	})
+	local configs = charts.interactive.get_hover_buttons(state, {position = {x = 14, y = 11}, zoom = 1, widget_width = 900, widget_height = 700})
+	local newest
+	for _, config in ipairs(configs) do
+		if config.region.data.column == 20 and config.region.data.series_name == "copper" then
+			newest = config
+		end
+	end
+	assert.is_not_nil(newest)
+	assert.equals(0, newest.region.data.seconds_ago)
+	local value = newest.region.data.value
+	assert.same({"", "copper", "\n", charts.format.si_label(value), " - ", "0 seconds ago"}, newest.tooltip)
+	for _, config in ipairs(configs) do
+		if config.region.data.column == 1 then
+			assert.equals(38, config.region.data.seconds_ago)
+		end
+	end
 	charts.interactive.destroy(state)
 end)
 
