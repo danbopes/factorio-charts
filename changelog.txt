@@ -5,14 +5,22 @@ Date: ????
     - New default look, like the vanilla Production statistics graph: black plot area, 1 px series lines, 8 grid lines (was 5), grid colour 0.25 grey at 1 px, labels in font "default" at scale 0.93 in 0.7 grey
     - Chart chunks use out-of-map tiles on an always_day surface instead of lab tiles lit by nine lights (pure black, 9 fewer render objects per chunk)
     - Bar chart grid, labels and hatching use the same style, with 1 px lines
+    - Time labels keep one decimal below 10 of a unit ("1.7m" instead of "2m"), and "si"/"time" axis labels add decimals when two neighbouring ticks would read the same
   Features:
+    - X axis for line graphs: x_axis = {ticks_per_point, format, labels, grid} draws time-ago labels under the plot ("10 ... 0.5 0" minutes), newest at the right; time_series.render fills ticks_per_point from interval.ticks
+    - Y axis options: label_format = "si" ("0", "16k", "1.2M"), grid_lines, y_range = "zero" (auto max, min pinned at 0) and nice_ticks (1/2/2.5/5 x 10^k steps)
+    - Crosshair hover for line graphs, like the vanilla graph: charts.interactive.get_hover_buttons builds transparent overlay buttons with native tooltips ("iron-plate / 35k - 6.6 minutes ago"); charts.events.handle_gui_hover / handle_gui_leave draw, per player, a vertical and a horizontal guide, a marker and the hovered series twice as thick; set_hover / clear_hover drive it directly; "cell" (nearest series) or "column" mode with a max_buttons budget; on_cell_hover / on_cell_leave callbacks
     - Line graph options camera_zoom (default 1.5), line_px (default 1), line_width (raw width, wins over line_px) and smooth (centred moving average, default off); time_series.render passes them through
     - Bar chart option camera_zoom
     - charts.style: line_width(px, zoom), grid_width, draw_label, smooth and the style constants
+    - charts.format.si_label(value, decimals) and charts.format.time_ago(seconds)
     - charts.surface.restyle_chunk converts a chunk allocated by an older version (idempotent)
-    - Line graph metadata adds camera_zoom, line_width, smooth, and raw_value on each point when smoothing
+    - Line graph metadata adds columns, x_positions, seconds_ago, plot, series_order, y_ticks, x_labels, x_unit, x_step, ticks_per_point, label_format, camera_zoom, line_width, smooth, and raw_value on each point when smoothing
+    - charts.interaction.create_line_graph_hover_regions and draw_crosshair for mods that do not use charts.interactive; create_overlay_buttons accepts raise_hover_events and per-button tags
   Info:
     - Mods with existing saves: call charts.surface.restyle_chunk(surface_data, chunk) once per stored chunk (or free and re-allocate them) to get the black background; until then old chunks keep their lights and lab tiles
+    - Interactive chart states are looked up by options.id when a hover event arrives; give states you keep in storage a stable id and call charts.interactive.register(state) in on_load
+    - tests/init.lua passes load_luassert = true, which FactorioTest 3.x needs for the luassert-style asserts
 ---------------------------------------------------------------------------------------------------
 Version: 1.2.0
 Date: 2026-08-30
