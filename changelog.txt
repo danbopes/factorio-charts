@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.2.0
+Date: 2026-08-30
+  Info:
+    - Updated for Factorio 2.1. Version 1.1.0 remains available for Factorio 2.0.
+  Changes:
+    - Chart backlight now uses 2.1's lower-resolution gradient lights (LuaRendering::draw_light change in 2.1.0)
+---------------------------------------------------------------------------------------------------
+Version: 1.1.0
+Date: 2026-02-22
+  Features:
+    - Added bar_icons option to the stacked bar chart renderer
+---------------------------------------------------------------------------------------------------
 Version: 1.0.9
 Date: 2026-02-19
   Changes:
@@ -7,7 +19,7 @@ Date: 2026-02-19
     - Documented custom function support for label_format in line graphs
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.8
-Date: 2025-02-19
+Date: 2026-02-19
   Features:
     - Reorganized source files into core/, charts/, and interaction/ subdirectories
     - New sub-table API (charts.surface, charts.render, charts.interaction, etc.)
@@ -17,19 +29,19 @@ Date: 2025-02-19
     - All existing flat API calls (e.g. charts.create_surface) remain fully backward compatible
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.2
-Date: 2025-01-03
+Date: 2026-01-03
   Features:
     - Added mod portal thumbnail
     - Added factorio-test-harness integration for automated CLI testing
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.1
-Date: 2025-01-03
+Date: 2026-01-03
   Features:
     - Added test suite using FactorioTest framework
     - Tests for surface management, line graphs, bar charts, and edge cases
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.0
-Date: 2025-01-03
+Date: 2026-01-03
   Features:
     - Initial release
     - Line graph rendering with multi-series support
