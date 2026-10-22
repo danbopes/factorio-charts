@@ -1,8 +1,8 @@
 -- Stacked bar chart rendering
 local bar_chart = {}
 
-local colors_module = require("core/colors")
 local format_module = require("core/format")
+local style = require("core/style")
 
 -- Constants
 local STRIPE_SPACING = 0.4  -- Increased from 0.15 for better performance
@@ -20,7 +20,8 @@ local DEFAULT_BAR_SPACING = 0.1
 ---@param seg_bottom number
 ---@param ttl number
 ---@param line_ids table Array to append render IDs to
-local function draw_hatched_stripes(surface, seg_left, seg_top, seg_right, seg_bottom, ttl, line_ids)
+---@param width number draw_line width
+local function draw_hatched_stripes(surface, seg_left, seg_top, seg_right, seg_bottom, ttl, line_ids, width)
 	local seg_width = seg_right - seg_left
 	local seg_height = seg_bottom - seg_top
 
@@ -47,7 +48,7 @@ local function draw_hatched_stripes(surface, seg_left, seg_top, seg_right, seg_b
 			local stripe_id = rendering.draw_line{
 				surface = surface,
 				color = STRIPE_COLOR,
-				width = 1,
+				width = width,
 				from = {start_x, start_y},
 				to = {end_x, end_y},
 				time_to_live = ttl,
@@ -84,8 +85,10 @@ local function render_internal(surface, chunk, options, collect_metadata, overla
 		return nil
 	end
 
-	local grid_color = colors_module.get_grid_color()
-	local label_color = colors_module.get_label_color()
+	local camera_zoom = options.camera_zoom or style.DEFAULT_ZOOM
+	local line_width = style.line_width(style.DEFAULT_LINE_PX, camera_zoom)
+	local grid_width = style.grid_width(camera_zoom)
+	local grid_color = style.grid_color()
 
 	-- Graph coordinates
 	local graph_left = 1.5
@@ -161,19 +164,17 @@ local function render_internal(surface, chunk, options, collect_metadata, overla
 		local id = rendering.draw_line{
 			surface = surface,
 			color = grid_color,
-			width = 1,
+			width = grid_width,
 			from = {entity_pos.x + graph_left, entity_pos.y + grid_y},
 			to = {entity_pos.x + graph_right, entity_pos.y + grid_y},
 			time_to_live = ttl,
 		}
 		line_ids[#line_ids + 1] = id
 
-		local text_id = rendering.draw_text{
+		local text_id = style.draw_label{
 			text = format_module.time_label(grid_value),
 			surface = surface,
 			target = {entity_pos.x + graph_left - 0.2, entity_pos.y + grid_y},
-			color = label_color,
-			scale = 0.8,
 			alignment = "right",
 			vertical_alignment = "middle",
 			time_to_live = ttl,
@@ -280,7 +281,7 @@ local function render_internal(surface, chunk, options, collect_metadata, overla
 
 				-- Draw diagonal stripes for hatched phases
 				if hatched_phases[phase] then
-					draw_hatched_stripes(surface, seg_left, seg_top, seg_right, seg_bottom, ttl, line_ids)
+					draw_hatched_stripes(surface, seg_left, seg_top, seg_right, seg_bottom, ttl, line_ids, line_width)
 				end
 
 				cumulative_height = cumulative_height + segment_height
@@ -338,6 +339,7 @@ end
 ---  - phase_order: string[] Order of phases from bottom to top
 ---  - hatched_phases: table? {[phase_name]: true} Phases to draw with diagonal stripes
 ---  - bar_icons: table? Array indexed by bar index, each entry is a sprite path string (e.g. "item/iron-plate")
+---  - camera_zoom: number? Zoom of the camera that shows the chart (default 1.5); keeps grid and stripes at 1 px
 ---  - ttl: number? Time to live in ticks (default 360)
 ---  - viewport_width: number? Viewport width in pixels (default 900)
 ---  - viewport_height: number? Viewport height in pixels (default 700)

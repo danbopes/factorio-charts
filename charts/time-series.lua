@@ -141,7 +141,8 @@ end
 ---  - selected_series: table? {[name]: bool} Filter which series to show
 ---  - y_range: (table|string)? {min, max} fixed range, "zero" for min pinned at 0, nil for auto-scale
 ---  - label_format: string? "percent" (default), "time" or "si"
----  - grid_lines: number? Horizontal grid lines (default 5)
+---  - grid_lines: number? Horizontal grid lines (default 8)
+---  - camera_zoom, line_px, line_width, smooth: passed to the line graph (see line_graph.render)
 ---  - nice_ticks: boolean? Round an auto-scaled Y range to nice steps (default false)
 ---  - x_axis: (table|false)? Time labels; ticks_per_point defaults to the interval's `ticks`
 ---  - viewport_width: number? Viewport width in pixels (default 900)
@@ -206,6 +207,10 @@ function time_series.render(surface, intervals, interval_index, options)
 		grid_lines = options.grid_lines,
 		nice_ticks = options.nice_ticks,
 		x_axis = x_axis,
+		camera_zoom = options.camera_zoom,
+		line_px = options.line_px,
+		line_width = options.line_width,
+		smooth = options.smooth,
 	})
 
 	if line_ids then

@@ -3,6 +3,7 @@ local line_graph = {}
 
 local colors_module = require("core/colors")
 local format_module = require("core/format")
+local style = require("core/style")
 
 local TILE_PIXELS = 32
 -- Height reserved under the plot for X labels when x_axis is on.
@@ -179,15 +180,19 @@ local function render_internal(surface, chunk, options, collect_metadata)
 	if type(x_axis) ~= "table" then
 		x_axis = nil
 	end
-	local num_grid_lines = math.max(2, options.grid_lines or 5)
+	local num_grid_lines = math.max(2, options.grid_lines or style.GRID_LINES)
 	local selected_series = options.selected_series
 	local ttl = options.ttl or 360
 	local viewport_width = options.viewport_width or 900
 	local viewport_height = options.viewport_height or 700
 
-	local series_colors = colors_module.get_series_colors()
-	local grid_color = colors_module.get_grid_color()
-	local label_color = colors_module.get_label_color()
+	local camera_zoom = options.camera_zoom or style.DEFAULT_ZOOM
+	local series_width = options.line_width or style.line_width(options.line_px, camera_zoom)
+	local grid_width = style.grid_width(camera_zoom)
+	local smooth = options.smooth
+
+	local series_colors = style.series_colors()
+	local grid_color = style.grid_color()
 	local max_lines = colors_module.get_max_series()
 
 	-- Collect and sort ALL series by sum first (for consistent color assignment)
@@ -231,6 +236,32 @@ local function render_internal(surface, chunk, options, collect_metadata)
 	end
 
 	local to_draw = math.min(datasets, max_lines)
+
+	-- Smoothed copies of the drawn series replace `data` from here on, so the range, the lines and the metadata
+	-- all agree; the caller's ring buffer is left alone.
+	local raw_data = nil
+	if smooth and smooth > 1 then
+		raw_data = data
+		data = {}
+		local order = {}
+		for i = index + 1, length do order[#order + 1] = i end
+		for i = 1, math.min(index, length) do order[#order + 1] = i end
+		for i = 1, length do
+			data[i] = {}
+		end
+		for j = 1, to_draw do
+			local name = ordered_sums[j].name
+			local values = {}
+			for k, slot in ipairs(order) do
+				local datum = raw_data[slot]
+				values[k] = datum and datum[name]
+			end
+			local smoothed = style.smooth(values, smooth, #order)
+			for k, slot in ipairs(order) do
+				data[slot][name] = smoothed[k]
+			end
+		end
+	end
 
 	-- Compute Y-axis range from actual data
 	local min_y = math.huge
@@ -321,7 +352,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		local id = rendering.draw_line{
 			surface = surface,
 			color = grid_color,
-			width = 1,
+			width = grid_width,
 			from = {entity_pos.x + graph_left, entity_pos.y + grid_y},
 			to = {entity_pos.x + graph_right, entity_pos.y + grid_y},
 			time_to_live = ttl,
@@ -332,12 +363,10 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		if y_ticks then
 			y_ticks[#y_ticks + 1] = {value = grid_value, y = grid_y, text = label_text}
 		end
-		local text_id = rendering.draw_text{
+		local text_id = style.draw_label{
 			text = label_text,
 			surface = surface,
 			target = {entity_pos.x + graph_left - 0.2, entity_pos.y + grid_y},
-			color = label_color,
-			scale = 1.0,
 			alignment = "right",
 			vertical_alignment = "middle",
 			time_to_live = ttl,
@@ -360,19 +389,17 @@ local function render_internal(surface, chunk, options, collect_metadata)
 				line_ids[#line_ids + 1] = rendering.draw_line{
 					surface = surface,
 					color = grid_color,
-					width = 1,
+					width = grid_width,
 					from = {entity_pos.x + label_x, entity_pos.y + graph_top},
 					to = {entity_pos.x + label_x, entity_pos.y + graph_bottom},
 					time_to_live = ttl,
 				}
 			end
 
-			line_ids[#line_ids + 1] = rendering.draw_text{
+			line_ids[#line_ids + 1] = style.draw_label{
 				text = label.text,
 				surface = surface,
 				target = {entity_pos.x + label_x, entity_pos.y + graph_bottom + 0.1},
-				color = label_color,
-				scale = 1.0,
 				alignment = "center",
 				vertical_alignment = "top",
 				time_to_live = ttl,
@@ -400,6 +427,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 						x = x,
 						y = y,
 						value = n,
+						raw_value = raw_data and raw_data[index + 1][name] or nil,
 						data_index = index + 1,
 					}
 				end
@@ -437,6 +465,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 							x = x,
 							y = y,
 							value = n,
+							raw_value = raw_data and raw_data[i][name] or nil,
 							data_index = i,
 						}
 					end
@@ -448,7 +477,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 						local id = rendering.draw_line{
 							surface = surface,
 							color = series_colors[entry.color_index],
-							width = 1,
+							width = series_width,
 							from = from_pos,
 							to = to_pos,
 							time_to_live = ttl,
@@ -485,6 +514,9 @@ local function render_internal(surface, chunk, options, collect_metadata)
 			series_order = {},
 			label_format = label_format,
 			y_ticks = y_ticks,
+			camera_zoom = camera_zoom,
+			line_width = series_width,
+			smooth = raw_data and smooth or nil,
 		}
 
 		-- Bottom-most first: series are stroked from to_draw down to 1, so entry 1 of ordered_sums ends on top.
@@ -527,7 +559,11 @@ end
 ---  - sum: table {[series_name]: total} for calculating averages
 ---  - y_range: (table|string)? {min, max} fixed range, "zero" auto max with min pinned at 0, nil auto-scale
 ---  - label_format: (string|function)? "percent" (default), "time", "si", or function(value) -> string
----  - grid_lines: number? Horizontal grid lines incl. top and bottom (default 5)
+---  - grid_lines: number? Horizontal grid lines incl. top and bottom (default 8 since 1.3.0, was 5)
+---  - camera_zoom: number? Zoom of the camera that shows the chart (default 1.5); line widths are derived from it
+---  - line_px: number? Series line thickness in screen pixels at camera_zoom (default 1)
+---  - line_width: number? Raw draw_line width for the series; wins over line_px
+---  - smooth: number? Centred moving average window over the drawn values (odd, e.g. 3; default nil = off)
 ---  - nice_ticks: boolean? Round an auto-scaled range out to 1/2/2.5/5 x 10^k steps (default false)
 ---  - x_axis: (table|false)? Time labels under the plot (default false). Fields:
 ---      ticks_per_point (game ticks per ring-buffer slot, default 60),

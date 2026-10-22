@@ -10,6 +10,7 @@ local rendering_module = require("core/rendering")
 local line_graph = require("charts/line-graph")
 local bar_chart = require("charts/bar-chart")
 local colors = require("core/colors")
+local style = require("core/style")
 local format = require("core/format")
 local interaction = require("interaction/interaction")
 local interactive_chart = require("interaction/interactive-chart")
@@ -26,6 +27,7 @@ charts.surface = {
 	allocate_chunk = rendering_module.allocate_chunk,
 	free_chunk = rendering_module.free_chunk,
 	ensure_tile_coverage = rendering_module.ensure_tile_coverage,
+	restyle_chunk = rendering_module.restyle_chunk,
 	get_viewport_size = rendering_module.get_viewport_size,
 	get_camera_params = rendering_module.get_camera_params,
 	setup_camera_widget = rendering_module.setup_camera_widget,
@@ -52,6 +54,9 @@ charts.colors = {
 	get_label_color = colors.get_label_color,
 	get_max_series = colors.get_max_series,
 }
+
+-- The production-graph look: line widths per camera zoom, grid/label style, moving average
+charts.style = style
 
 -- Format utilities
 charts.format = {
