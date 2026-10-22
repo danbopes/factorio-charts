@@ -25,7 +25,8 @@ factorio-charts/
 ├── control.lua                     Factorio requirement (minimal)
 ├── core/
 │   ├── rendering.lua               Surface and chunk management
-│   ├── colors.lua                  12-color series palette
+│   ├── colors.lua                  12-color series palette, grid and label colours
+│   ├── style.lua                   The production-graph look (line widths per zoom, label style, smoothing)
 │   └── format.lua                  Label formatting utilities
 ├── charts/
 │   ├── line-graph.lua              Multi-series line graph rendering
@@ -40,7 +41,7 @@ factorio-charts/
 ```
 
 **Grouping rationale:**
-- **`core/`** — Shared foundations with no chart-type deps (surface mgmt, colors, formatting)
+- **`core/`** — Shared foundations with no chart-type deps (surface mgmt, colors, style, formatting)
 - **`charts/`** — Chart type implementations (depend on core/, produce rendered output)
 - **`interaction/`** — User interaction: hit testing, high-level interactive wrapper, events
 
@@ -53,6 +54,7 @@ factorio-charts/
 | `charts.surface` | Surface/chunk management: `create`, `allocate_chunk`, `free_chunk`, `get_camera_params`, etc. |
 | `charts.render` | Chart rendering: `line_graph`, `stacked_bars`, `time_series`, `*_with_metadata`, `*_with_overlays` |
 | `charts.colors` | Color palette: `get_series_colors`, `get_series_color`, `get_grid_color`, `get_label_color`, `get_max_series` |
+| `charts.style` | The 1.3.0 look: `line_width(px, zoom)`, `grid_width`, `draw_label`, `smooth`, `DEFAULT_ZOOM`, colours |
 | `charts.format` | Formatting: `time_label`, `percent_label`, `time_detailed`, `si_label` |
 | `charts.interaction` | Hit testing, coordinate transforms, highlights, tooltips, overlay buttons |
 | `charts.interactive` | High-level interactive chart wrappers: `create_line_graph`, `on_hover`, `get_hover_buttons`, `set_hover`, `destroy`, etc. |
@@ -61,7 +63,7 @@ factorio-charts/
 
 ### Key Concepts
 
-**Surface Management**: Charts are rendered on hidden Factorio surfaces. `charts.surface.create()` initializes one, then `charts.surface.allocate_chunk()` gives you a 32x32 tile area with lighting. Chunks are reused via a freelist when freed.
+**Surface Management**: Charts are rendered on hidden Factorio surfaces. `charts.surface.create()` initializes one, then `charts.surface.allocate_chunk()` gives you a tile area sized to the viewport, covered in `out-of-map` tiles on an `always_day` surface (pure black, no lights since 1.3.0). Chunks are reused via a freelist when freed. `restyle_chunk` converts chunks allocated by older versions (lab tiles + nine lights); it must stay idempotent.
 
 **Ring Buffer Data Format**: Line graphs expect data in a ring buffer format:
 - `data`: array of `{[series_name]: value}` tables
@@ -71,7 +73,9 @@ factorio-charts/
 
 **Rendering Coordinates**: Graphs use pixel-based viewport dimensions (default 900x700) converted to tile coordinates (divide by 32). Graph area has margins for axis labels.
 
-**Axes (opt-in)**: `x_axis = {ticks_per_point, format, labels, grid}` adds "minutes ago" labels under the plot (newest = 0 at the right edge, plot bottom moves up 0.7 tile); `label_format = "si"`, `grid_lines`, `y_range = "zero"` and `nice_ticks` shape the Y axis. Defaults (`x_axis = false`, 5 grid lines, no nice ticks) keep 1.2.0 renders identical; `tests/axes_test.lua` checks that. Metadata adds `columns`, `x_positions`, `seconds_ago`, `plot`, `series_order` (bottom-most first), `y_ticks`, `x_labels`: hover code (crosshair) builds on these names, so keep them stable. Label helpers in `core/format.lua` take an optional `decimals` so the renderer can keep neighbouring ticks distinct.
+**Axes (opt-in)**: `x_axis = {ticks_per_point, format, labels, grid}` adds "minutes ago" labels under the plot (newest = 0 at the right edge, plot bottom moves up 0.7 tile); `label_format = "si"`, `grid_lines`, `y_range = "zero"` and `nice_ticks` shape the Y axis. Defaults are `x_axis = false` and no nice ticks; `grid_lines` defaults to 8 since 1.3.0 (`tests/axes_test.lua` pins the default object set). Metadata adds `columns`, `x_positions`, `seconds_ago`, `plot`, `series_order` (bottom-most first), `y_ticks`, `x_labels`: hover code (crosshair) builds on these names, so keep them stable. Label helpers in `core/format.lua` take an optional `decimals` so the renderer can keep neighbouring ticks distinct.
+
+**The look (1.3.0 defaults)**: measured on Factorio 2.1: `draw_line` is not anti-aliased and a width `w` shows as about `ceil(w * camera_zoom)` screen pixels, so widths come from `style.line_width(px, zoom) = (px - 0.5) / zoom` (aiming half a pixel low avoids the rounding boundary). Renderers take `camera_zoom` (default `style.DEFAULT_ZOOM` = 1.5) and the line graph `line_px` / `line_width` / `smooth`. Plain `draw_line` segments only: vertex circles add objects for nothing, and thin `draw_polygon` ribbons drop pixels. Grid {0.25} 1 px, labels font "default" scale 0.93 colour {0.7} with `scale_with_zoom = false` (true would pin text to its zoom-1 size and ignore UI scale). New drawing (hover markers etc.) should go through `core/style.lua`.
 
 **TTL-Based Cleanup**: All rendered objects use `time_to_live` in ticks. No manual cleanup needed for graph lines/text - they auto-expire.
 

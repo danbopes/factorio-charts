@@ -1,4 +1,19 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.3.0
+Date: ????
+  Changes:
+    - New default look, like the vanilla Production statistics graph: black plot area, 1 px series lines, 8 grid lines (was 5), grid colour 0.25 grey at 1 px, labels in font "default" at scale 0.93 in 0.7 grey
+    - Chart chunks use out-of-map tiles on an always_day surface instead of lab tiles lit by nine lights (pure black, 9 fewer render objects per chunk)
+    - Bar chart grid, labels and hatching use the same style, with 1 px lines
+  Features:
+    - Line graph options camera_zoom (default 1.5), line_px (default 1), line_width (raw width, wins over line_px) and smooth (centred moving average, default off); time_series.render passes them through
+    - Bar chart option camera_zoom
+    - charts.style: line_width(px, zoom), grid_width, draw_label, smooth and the style constants
+    - charts.surface.restyle_chunk converts a chunk allocated by an older version (idempotent)
+    - Line graph metadata adds camera_zoom, line_width, smooth, and raw_value on each point when smoothing
+  Info:
+    - Mods with existing saves: call charts.surface.restyle_chunk(surface_data, chunk) once per stored chunk (or free and re-allocate them) to get the black background; until then old chunks keep their lights and lab tiles
+---------------------------------------------------------------------------------------------------
 Version: 1.2.0
 Date: 2026-08-30
   Info:

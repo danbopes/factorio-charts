@@ -82,14 +82,14 @@ local camera_widget = parent.add{
 
 ## Axes and number formatting
 
-Line graphs can look like Factorio's Production statistics graph. All of these are opt-in; without them a
-render is identical to 1.2.0.
+Line graphs can look like Factorio's Production statistics graph. The axis options below are opt-in; the
+line, grid and background style is the default since 1.3.0 (see "The look" below).
 
 ```lua
 charts.render.line_graph(surface, chunk, {
     data = ring_buffer, index = idx, length = len, counts = counts, sum = sums,
     label_format = "si",          -- Y labels "0", "16k", "1.2M"
-    grid_lines = 8,               -- horizontal grid lines incl. top and bottom (default 5)
+    grid_lines = 8,               -- horizontal grid lines incl. top and bottom (default 8 since 1.3.0, was 5)
     y_range = "zero",             -- auto max, min pinned at 0 ({min, max} stays a fixed range)
     nice_ticks = true,            -- round the auto range to 1/2/2.5/5 x 10^k steps (default false)
     x_axis = {                    -- default false: no X labels
@@ -121,8 +121,56 @@ when two neighbouring ticks would otherwise read the same.
 | `x_unit`, `x_step`, `ticks_per_point` | Display unit, label step in that unit, ticks per slot; nil without `x_axis` |
 | `label_format` | The Y label format in use |
 
-`charts.render.time_series` passes `x_axis`, `grid_lines`, `nice_ticks` and `y_range` through and caches the
-metadata on `intervals[i].metadata`.
+`charts.render.time_series` passes `x_axis`, `grid_lines`, `nice_ticks`, `y_range`, `camera_zoom`, `line_px`,
+`line_width` and `smooth` through and caches the metadata on `intervals[i].metadata`.
+
+## The look (1.3.0)
+
+Charts draw like the vanilla Production statistics graph by default: a pure black plot area, 1 px series lines,
+8 faint grid lines and small grey labels. The numbers were measured on Factorio 2.1, where `draw_line` is not
+anti-aliased and a width `w` shows as about `ceil(w * camera_zoom)` whole screen pixels (never less than 1).
+
+```lua
+charts.render.line_graph(surface, chunk, {
+    -- ...data options...
+    camera_zoom = player.display_scale / player.display_density_scale,  -- the zoom your camera widget uses (default 1.5)
+    line_px = 1,                  -- series thickness in screen pixels (default 1; 2 for an emphasised series)
+    line_width = nil,             -- raw draw_line width; wins over line_px
+    smooth = 3,                   -- centred moving average over the drawn values (odd window; default nil = off)
+})
+charts.render.stacked_bars(surface, chunk, {..., camera_zoom = zoom})  -- 1 px grid and hatching
+```
+
+- Pass `camera_zoom` when your camera zoom is not 1.5; without it the library assumes 1.5 (Cybersyn's
+  `display_scale / display_density_scale` on 4K at UI scale 1.5). The default width (1/3) is still 1 px at zoom 1
+  and 0.75; it only gets thicker above zoom 3.
+- `smooth` averages each value with its neighbours in time (the window shrinks at the ends; missing values stay
+  gaps). Raw per-sample data with one point per ~3 GUI pixels zig-zags; `smooth = 3` looks closest to vanilla,
+  which averages many ticks per column. The Y range follows the smoothed values; metadata `point_positions` carry
+  the drawn `value` and the original `raw_value`, plus `metadata.smooth`, `metadata.camera_zoom` and
+  `metadata.line_width`.
+- About 300 columns across a 900 px viewport is the right density; more points than screen pixels only add noise
+  and render objects (300 x 6 series = 1794 segments, about 4 ms to draw).
+
+`charts.style` holds the recipe for your own drawing (hover markers, legends):
+
+| Name | Value |
+|------|-------|
+| `style.line_width(px, zoom)` | `(px - 0.5) / zoom`: the `draw_line` width that gives `px` screen pixels |
+| `style.grid_width(zoom)` | 1 px grid width |
+| `style.DEFAULT_ZOOM`, `style.DEFAULT_LINE_PX`, `style.GRID_LINES` | 1.5, 1, 8 |
+| `style.grid_color()`, `style.label_color()` | {0.25, 0.25, 0.25}, {0.7, 0.7, 0.7} |
+| `style.LABEL_FONT`, `style.LABEL_SCALE` | "default", 0.93 (about 14 px digits at zoom 1.5), `scale_with_zoom = false` |
+| `style.draw_label(params)` | `rendering.draw_text` with the label font, scale and colour filled in |
+| `style.series_colors()`, `style.series_color(i)` | The 12-colour palette (indices unchanged) |
+| `style.smooth(values, n, count)` | The moving average used by `smooth` |
+
+**Background and existing saves.** Chunks are now `out-of-map` tiles on a surface with `always_day = true`
+(pure black, no render objects), instead of `lab-dark-1` tiles lit by nine lights (which rendered a flat dark
+grey). `create_surface` sets `always_day` on an existing surface too, and new or reused chunks get the new tiles.
+Chunks your mod already holds from an older version keep their lights and lab tiles until you convert them:
+call `charts.surface.restyle_chunk(surface_data, chunk)` once per stored chunk (for example from
+`on_configuration_changed`), or free and re-allocate them. `restyle_chunk` is idempotent.
 
 ## Crosshair hover (line graphs)
 
@@ -200,6 +248,7 @@ about 0.7 ms and 302 render objects at 300 columns (polygon mode: 0.1-0.3 ms, 4 
 | `charts.surface.create(name)` | Create a hidden surface for rendering |
 | `charts.surface.allocate_chunk(surface_data)` | Get a chunk for rendering a graph |
 | `charts.surface.free_chunk(surface_data, chunk)` | Return a chunk when done |
+| `charts.surface.restyle_chunk(surface_data, chunk)` | Give a chunk from an older version the black background (idempotent) |
 | `charts.surface.get_camera_params(chunk, options)` | Calculate camera position and zoom |
 | `charts.surface.setup_camera_widget(element, surface, chunk, options)` | Configure a camera widget |
 | `charts.surface.create_render_state(surface_data)` | Create chunk + line_ids storage |
