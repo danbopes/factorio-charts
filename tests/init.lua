@@ -22,5 +22,6 @@ if script.active_mods["factorio-test"] then
     }, {
         -- FactorioTest 3.x no longer installs luassert as the global `assert` unless asked.
         load_luassert = true,
+        "tests/crosshair_test",
     })
 end
