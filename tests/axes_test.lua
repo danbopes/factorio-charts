@@ -166,6 +166,24 @@ test("x_axis over 10 minutes gives 21 minute labels 0..10 like vanilla", functio
     end)
 end)
 
+test("x labels lie within the plot: newest at plot.right, the oldest at plot.left", function()
+    with_chunk(function(surface, chunk)
+        for _, case in ipairs({{300, 120, "10"}, {600, 60, "10"}, {5, 60, nil}, {2, 60, nil}}) do
+            local _, _, md = render(surface, chunk, case[1], {x_axis = {ticks_per_point = case[2]}})
+            for _, label in ipairs(md.x_labels) do
+                assert.is_true(label.x >= md.plot.left - EPS and label.x <= md.plot.right + EPS,
+                    case[1] .. " columns: label " .. label.text .. " at " .. label.x .. " outside the plot")
+            end
+            near(md.plot.right, md.x_labels[1].x, "newest label")
+            if case[3] then
+                local oldest = md.x_labels[#md.x_labels]
+                assert.equals(case[3], oldest.text)
+                near(md.plot.left, oldest.x, "oldest label")
+            end
+        end
+    end)
+end)
+
 test("x_axis over 1 hour labels every 5 minutes", function()
     with_chunk(function(surface, chunk)
         local _, _, md = render(surface, chunk, 360, {x_axis = {ticks_per_point = 600}})
@@ -263,7 +281,9 @@ test("metadata carries columns, x_positions, seconds_ago, plot and series_order"
         local ordered_sums, _, md = render(surface, chunk, 120, {x_axis = {ticks_per_point = 30}})
         assert.equals(120, md.columns)
         assert.equals(120, #md.x_positions)
-        near(md.plot.left, md.x_positions[1], "first column at plot.left")
+        -- One time slot per column, ending at its point: the oldest sits one slot in from plot.left.
+        near((md.plot.right - md.plot.left) / 120, md.dx, "dx")
+        near(md.plot.left + md.dx, md.x_positions[1], "first column one slot in from plot.left")
         near(md.plot.right, md.x_positions[120], "last column at plot.right")
         for i = 2, 120 do
             assert.is_true(md.x_positions[i] > md.x_positions[i - 1])
@@ -307,8 +327,9 @@ test("single-slot buffer gives finite x_positions", function()
             data = {{a = 5}}, index = 0, length = 1, counts = {a = 1}, sum = {a = 5}, ttl = 60,
             x_axis = {ticks_per_point = 60},
         })
-        near(md.graph_left, md.x_positions[1], "x")
+        near(md.graph_right, md.x_positions[1], "x")
         assert.equals(1, #md.x_labels)
+        near(md.graph_right, md.x_labels[1].x, "label x")
     end)
 end)
 

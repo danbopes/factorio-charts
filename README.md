@@ -102,7 +102,10 @@ charts.render.line_graph(surface, chunk, {
 ```
 
 The X axis counts time backwards: the newest slot is "0" at the right edge and a 600 x 1 s buffer reads "10"
-(minutes) at the left, with labels every 0.5. "auto" picks seconds below 2 minutes, minutes below 2 hours,
+(minutes) at the left edge, with labels every 0.5. Each column is one time slot ending at its point, so points are
+`plot width / columns` apart, the newest on the right edge and the oldest one slot in from the left edge, and the
+left edge is exactly `columns x ticks_per_point / 60` seconds old (1.2.0 spread the points `width / (columns - 1)`
+apart, oldest on the left edge). "auto" picks seconds below 2 minutes, minutes below 2 hours,
 hours above. The plot shrinks by 0.7 tile to make room for the label row. "si" and "time" Y labels add decimals
 when two neighbouring ticks would otherwise read the same.
 
@@ -112,7 +115,7 @@ when two neighbouring ticks would otherwise read the same.
 | Field | Meaning |
 |-------|---------|
 | `columns` | Number of ring-buffer slots drawn (= `length`) |
-| `x_positions[i]` | Plot x of column i in chunk-relative tiles, 1 = oldest, `columns` = newest |
+| `x_positions[i]` | Plot x of column i in chunk-relative tiles, 1 = oldest, `columns` = newest: `plot.left + i * dx` with `dx = plot width / columns` |
 | `seconds_ago[i]` | Age of column i in seconds (`(columns - i) * ticks_per_point / 60`); nil without `x_axis` |
 | `plot` | `{left, top, right, bottom}`: the plot rectangle, chunk-relative, without the label gutters |
 | `series_order` | `{name, color_index}` per drawn series, bottom-most first (the last entry is drawn on top) |

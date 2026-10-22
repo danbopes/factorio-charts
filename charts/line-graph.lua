@@ -320,7 +320,9 @@ local function render_internal(surface, chunk, options, collect_metadata)
 	local y_range = max_y - min_y
 	if y_range == 0 then y_range = 1 end
 
-	local dx = graph_width / (length - 1)
+	-- Each column is one time slot ending at its point: the newest point sits on plot.right and the oldest one slot in
+	-- from plot.left, so the left edge is exactly columns x seconds_per_column old, like the vanilla graph.
+	local dx = graph_width / length
 	local dy = graph_height / y_range
 
 	local entity_pos = chunk.coord
@@ -379,10 +381,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		x_ticks = compute_x_ticks(x_axis, length, graph_width)
 		for _, label in ipairs(x_ticks.labels) do
 			-- Newest sample sits at the right edge as "0", like the vanilla graph.
-			local label_x = graph_right
-			if length > 1 then
-				label_x = graph_right - dx * label.seconds_ago / x_ticks.seconds_per_column
-			end
+			local label_x = graph_right - dx * label.seconds_ago / x_ticks.seconds_per_column
 			label.x = label_x
 
 			if x_axis.grid then
@@ -409,7 +408,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 
 	-- Draw lines for each series and optionally track point positions
 	local prev = {}
-	local x = graph_left
+	local x = graph_left + dx
 
 	-- Get first datapoint (oldest)
 	local first = data[index + 1]
@@ -527,8 +526,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 
 		local x_positions = {}
 		for i = 1, length do
-			-- dx is infinite for a single slot; 0 * inf would be NaN.
-			x_positions[i] = length > 1 and graph_left + (i - 1) * dx or graph_left
+			x_positions[i] = graph_left + i * dx
 		end
 		metadata.x_positions = x_positions
 

@@ -18,7 +18,7 @@ local line_width = style.line_width
 ---@class CrosshairLayout
 ---@field plot table {left, top, right, bottom} chunk-relative tiles
 ---@field columns number
----@field dx number Tiles between columns
+---@field dx number Tiles between columns (one time slot)
 ---@field x_positions number[] Plot x of each column (1 = oldest)
 ---@field seconds_ago number[]? Age of each column, nil when the chart has no time axis
 ---@field series table[] {name, color_index, color, order} bottom-most first
@@ -31,7 +31,9 @@ function crosshair.layout(metadata)
 	local plot = metadata.plot
 	local columns = metadata.columns
 	local x_positions = metadata.x_positions
-	local dx = columns > 1 and (plot.right - plot.left) / (columns - 1) or (plot.right - plot.left)
+	-- From x_positions rather than the plot, so metadata whose oldest point sits on plot.left (the 1.2.0 spacing,
+	-- or hand-built metadata) works as well as line_graph's one-slot inset.
+	local dx = columns > 1 and (x_positions[columns] - x_positions[1]) / (columns - 1) or (plot.right - plot.left)
 
 	-- metadata.series_order is bottom-most first; order is that index, so a higher order is drawn on top.
 	local series = {}
@@ -50,7 +52,7 @@ function crosshair.layout(metadata)
 	local by_column = {}
 	for name, points in pairs(metadata.point_positions) do
 		for _, point in ipairs(points) do
-			local column = columns > 1 and math.floor((point.x - plot.left) / dx + 0.5) + 1 or 1
+			local column = columns > 1 and math.floor((point.x - x_positions[1]) / dx + 0.5) + 1 or 1
 			local slot = by_column[column]
 			if not slot then
 				slot = {}
@@ -134,7 +136,8 @@ function crosshair.create_regions(chunk, metadata, opts)
 		local centre = math.floor((first + last) / 2)
 		local points = layout.by_column[centre]
 		if points then
-			local left = math.max(plot.left, layout.x_positions[first] - half)
+			-- Column 1 owns the strip left of the oldest point too, so the buttons cover the whole plot.
+			local left = first == 1 and plot.left or math.max(plot.left, layout.x_positions[first] - half)
 			local right = math.min(plot.right, layout.x_positions[last] + half)
 			local seconds = layout.seconds_ago and layout.seconds_ago[centre]
 

@@ -280,6 +280,25 @@ test("hover regions from a real render use the rendered point positions", functi
 	charts.interactive.destroy(state)
 end)
 
+test("hover regions on a real render cover the plot from plot.left to plot.right", function()
+	for _, mode in ipairs({"cell", "column"}) do
+		local state = make_state("test-crosshair-cover-" .. mode)
+		charts.interactive.get_hover_buttons(state, {position = {x = 14, y = 11}, zoom = 1, widget_width = 900, widget_height = 700}, {mode = mode})
+		local plot = state.metadata.plot
+		local min_left, max_right = math.huge, -math.huge
+		for _, region in ipairs(charts.interactive.get_hover_regions(state)) do
+			min_left = math.min(min_left, region.tile_bounds.left - state.chunk.coord.x)
+			max_right = math.max(max_right, region.tile_bounds.right - state.chunk.coord.x)
+			if region.data.column == 1 then
+				assert.is_true(math.abs(region.tile_bounds.left - state.chunk.coord.x - plot.left) < 1e-9)
+			end
+		end
+		assert.is_true(math.abs(min_left - plot.left) < 1e-9)
+		assert.is_true(math.abs(max_right - plot.right) < 1e-9)
+		charts.interactive.destroy(state)
+	end
+end)
+
 test("hover regions on an axes render carry seconds_ago and an si tooltip", function()
 	local state = make_state("test-crosshair-axes", {
 		x_axis = {ticks_per_point = 120},

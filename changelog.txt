@@ -4,6 +4,7 @@ Date: ????
   Changes:
     - New default look, like the vanilla Production statistics graph: black plot area, 1 px series lines, 8 grid lines (was 5), grid colour 0.25 grey at 1 px, labels in font "default" at scale 0.93 in 0.7 grey
     - Chart chunks use out-of-map tiles on an always_day surface instead of lab tiles lit by nine lights (pure black, 9 fewer render objects per chunk); allocate_chunk and ensure_tile_coverage also set always_day, so surfaces from old saves do not go dark
+    - Line graph points are plot width / columns apart (was / (columns - 1)): each column is a time slot ending at its point, the newest on the right edge and the oldest one slot in from the left, so the X labels span exactly the plot ("10" on the left edge for 300 x 2 s); metadata dx and x_positions follow
     - Bar chart grid, labels and hatching use the same style, with 1 px lines
     - Time labels keep one decimal below 10 of a unit ("1.7m" instead of "2m"), and "si"/"time" axis labels add decimals when two neighbouring ticks would read the same
   Features:
