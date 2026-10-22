@@ -142,13 +142,16 @@ end
 ---@param seconds number
 ---@return string text "42 seconds ago", "6.6 minutes ago", "1.3 hours ago"
 function format_module.time_ago(seconds)
-	if seconds < 60 then
-		return plural(math.floor(seconds + 0.5), "second")
-	elseif seconds < 3600 then
-		return plural(one_decimal(seconds / 60), "minute")
-	else
-		return plural(one_decimal(seconds / 3600), "hour")
+	-- Round before picking the unit, or 59.6 s would read "60 seconds ago" and 3599 s "60 minutes ago".
+	local whole_seconds = math.floor(seconds + 0.5)
+	if whole_seconds < 60 then
+		return plural(whole_seconds, "second")
 	end
+	local minutes = one_decimal(seconds / 60)
+	if tonumber(minutes) < 60 then
+		return plural(minutes, "minute")
+	end
+	return plural(one_decimal(seconds / 3600), "hour")
 end
 
 
