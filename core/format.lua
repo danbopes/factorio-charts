@@ -1,16 +1,40 @@
 -- Formatting utilities for chart labels
 local format_module = {}
 
+local function strip_zeros(text)
+	if text:find("%.") then
+		text = text:gsub("0+$", ""):gsub("%.$", "")
+	end
+	return text
+end
+
+-- One decimal below 10, whole numbers above, so labels keep two or three significant digits.
+-- `decimals` overrides that when a caller needs finer labels to keep adjacent ticks distinct.
+local function short_number(x, decimals)
+	if decimals then
+		return strip_zeros(string.format("%." .. decimals .. "f", x))
+	end
+	if x < 10 then
+		local text = strip_zeros(string.format("%.1f", x))
+		if tonumber(text) < 10 then
+			return text
+		end
+	end
+	return string.format("%.0f", x)
+end
+
 ---Format seconds into human readable time for Y-axis labels
+---Below 10 of a unit it keeps one decimal, so ticks like 150 s and 180 s read "2.5m" and "3m" instead of "3m" twice.
 ---@param seconds number
+---@param decimals number? Fixed maximum decimals for seconds and minutes (trailing zeros dropped)
 ---@return string
-function format_module.time_label(seconds)
+function format_module.time_label(seconds, decimals)
 	if seconds < 60 then
-		return string.format("%.0fs", seconds)
+		return short_number(seconds, decimals) .. "s"
 	elseif seconds < 3600 then
-		return string.format("%.0fm", seconds / 60)
+		return short_number(seconds / 60, decimals) .. "m"
 	else
-		return string.format("%.1fh", seconds / 3600)
+		return string.format("%." .. math.max(1, decimals or 1) .. "f", seconds / 3600) .. "h"
 	end
 end
 
@@ -46,28 +70,12 @@ local si_units = {
 	{1e3, "k"},
 }
 
-local function strip_zeros(text)
-	if text:find("%.") then
-		text = text:gsub("0+$", ""):gsub("%.$", "")
-	end
-	return text
-end
-
--- One decimal below 10, whole numbers above, so labels keep two or three significant digits.
-local function short_number(x)
-	if x < 10 then
-		local text = strip_zeros(string.format("%.1f", x))
-		if tonumber(text) < 10 then
-			return text
-		end
-	end
-	return string.format("%.0f", x)
-end
 
 ---Format a number with an SI suffix the way Factorio's production graph labels its axis
 ---@param value number
+---@param decimals number? Fixed maximum decimals instead of "one below 10" (trailing zeros dropped)
 ---@return string
-function format_module.si_label(value)
+function format_module.si_label(value, decimals)
 	if value ~= value then
 		return "NaN"
 	end
@@ -84,7 +92,7 @@ function format_module.si_label(value)
 	while true do
 		local unit = si_units[unit_index]
 		local scaled = unit and magnitude / unit[1] or magnitude
-		text = short_number(scaled)
+		text = short_number(scaled, decimals)
 		-- Rounding can carry into the next unit (999.6k -> "1000k"), which should read "1M".
 		if tonumber(text) >= 1000 and unit_index > 1 then
 			unit_index = unit_index - 1

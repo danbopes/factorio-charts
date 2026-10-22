@@ -52,15 +52,43 @@ local function nice_range(lo, hi, intervals)
 	return lo, hi
 end
 
-local function format_y_label(label_format, value)
+local function format_y_label(label_format, value, decimals)
 	if type(label_format) == "function" then
 		return label_format(value)
 	elseif label_format == "time" then
-		return format_module.time_label(value)
+		return format_module.time_label(value, decimals)
 	elseif label_format == "si" then
-		return format_module.si_label(value)
+		return format_module.si_label(value, decimals)
 	end
 	return format_module.percent_label(value)
+end
+
+---Format every Y tick; for "si" and "time", add decimals until no two adjacent labels read the same
+---@param values number[]
+---@return string[]
+local function format_y_labels(label_format, values)
+	local texts
+	local function has_duplicate()
+		for i = 2, #texts do
+			if texts[i] == texts[i - 1] then
+				return true
+			end
+		end
+		return false
+	end
+
+	local decimals = nil
+	for _ = 1, 5 do
+		texts = {}
+		for i, value in ipairs(values) do
+			texts[i] = format_y_label(label_format, value, decimals)
+		end
+		if (label_format ~= "si" and label_format ~= "time") or not has_duplicate() then
+			break
+		end
+		decimals = (decimals or 1) + 1
+	end
+	return texts
 end
 
 ---Work out X tick positions for an x_axis spec
@@ -73,7 +101,8 @@ local function compute_x_ticks(x_axis, columns, plot_width)
 	local seconds_per_column = ticks_per_point / 60
 	-- A buffer of N slots stands for N slots of history, so a 600 x 1 s buffer reads "10" minutes at its
 	-- left edge like vanilla, even though its oldest sample is one slot newer than that.
-	local span = math.max(columns, 0) * seconds_per_column
+	-- A single slot has no width to spread labels over.
+	local span = columns > 1 and columns * seconds_per_column or 0
 
 	local fmt = x_axis.format or "auto"
 	local unit
@@ -277,9 +306,15 @@ local function render_internal(surface, chunk, options, collect_metadata)
 
 	local y_ticks = collect_metadata and {} or nil
 
+	local grid_values = {}
+	for i = 0, num_grid_lines - 1 do
+		grid_values[i + 1] = min_y + (y_range * i / (num_grid_lines - 1))
+	end
+	local grid_texts = format_y_labels(label_format, grid_values)
+
 	-- Draw horizontal grid lines with Y-axis labels
 	for i = 0, num_grid_lines - 1 do
-		local grid_value = min_y + (y_range * i / (num_grid_lines - 1))
+		local grid_value = grid_values[i + 1]
 		local grid_y = graph_bottom - ((grid_value - min_y) * dy)
 
 		-- Grid line
@@ -293,7 +328,7 @@ local function render_internal(surface, chunk, options, collect_metadata)
 		}
 		line_ids[#line_ids + 1] = id
 
-		local label_text = format_y_label(label_format, grid_value)
+		local label_text = grid_texts[i + 1]
 		if y_ticks then
 			y_ticks[#y_ticks + 1] = {value = grid_value, y = grid_y, text = label_text}
 		end
