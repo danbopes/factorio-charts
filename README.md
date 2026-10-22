@@ -226,7 +226,8 @@ States kept in `storage`: pass callbacks to `charts.interactive.register(state, 
 `callbacks = {on_cell_hover = fn, on_cell_leave = fn, format_tooltip = fn}`; function options are not saveable.
 Callbacks given to `register` win over the same names in the chart options, which still work for states that are
 never saved. `format_tooltip` there has the `opts.format_tooltip(cell, state)` signature of `get_hover_buttons`. The crosshair objects use
-`players = {player}`, so each player only sees their own; hovering never re-renders the graph.
+`players = {player}`, so each player only sees their own; hovering never re-renders the graph. Forgetting
+`register` in `on_load` makes hover silently do nothing: the handlers do not find the chart and return `false`.
 
 Details:
 - `get_hover_buttons(state, camera_info, opts)`: `opts.mode = "cell"` (default: each column is split between the
@@ -238,7 +239,10 @@ Details:
   `opts.format_tooltip(cell, state) -> LocalisedString` replaces the default tooltip. Button positions are in GUI
   units: pass `opts.player` (or `opts.gui_zoom`) unless the camera zoom is `display_scale / display_density_scale`.
 - Rebuild the buttons after `update_line_graph` (the tooltips hold values). An active crosshair follows a redraw
-  to the same column and series.
+  to the same column and series. Rebuilding is not free (about 9 ms for 360 buttons), so do it when the data
+  changes, throttled to the chart's refresh cadence, not every tick.
+- The default tooltip shows the internal series name (the key in your data, e.g. `iron-plate`); use
+  `opts.format_tooltip` for localised names or rich-text icons.
 - `charts.interactive.set_hover(state, player, cell)` / `clear_hover(state, player)` drive it directly;
   `options.on_cell_hover(cell, player, state)` and `options.on_cell_leave(player, state)` fire alongside (the old
   `on_hover(region, state)` / `on_hover_leave(region_id, state)` belong to the `charts.interactive.on_hover` path).
@@ -343,7 +347,7 @@ about 0.7 ms and 302 render objects at 300 columns (polygon mode: 0.1-0.3 ms, 4 
 | `charts.colors.get_series_colors()` | Get the 12-color palette array |
 | `charts.colors.get_series_color(index)` | Get a specific series color |
 | `charts.format.time_label(seconds)` | Format as "30s", "2.5m", "15m", "2.5h" (one decimal below 10 of a unit) |
-| `charts.format.percent_label(value)` | Format as percentage |
+| `charts.format.percent_label(value, decimals?)` | Format as percentage |
 | `charts.format.si_label(value)` | Format as "950", "1.2k", "16k", "1.2M" (production-graph style) |
 | `charts.format.time_ago(seconds)` | Format as "42 seconds ago", "6.6 minutes ago", "1.3 hours ago" |
 
