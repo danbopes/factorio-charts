@@ -316,8 +316,8 @@ test("set_hover draws for that player only and clear_hover removes it", function
 	local entry = state.hover[player.index]
 	assert.is_not_nil(entry)
 	assert.equals(region.id, entry.region_id)
-	-- vertical + horizontal + marker + one polygon ribbon for the thick series
-	assert.equals(4, #entry.objects)
+	-- vertical + horizontal + marker + 19 thick segments
+	assert.equals(22, #entry.objects)
 	assert.is_true(all_valid(entry.objects))
 	for _, obj in ipairs(entry.objects) do
 		local players = obj.players
@@ -346,13 +346,13 @@ test("set_hover replaces the previous crosshair of the same player", function()
 	charts.interactive.destroy(state)
 end)
 
-test("lines series mode draws the thick series one segment at a time", function()
+test("polygon series mode draws the thick series as one strip per unbroken run", function()
 	local player = game.players[1]
 	if not player then return skip_without_player() end
-	local state = make_state("test-crosshair-lines", {hover_series_mode = "lines"})
+	local state = make_state("test-crosshair-polygon", {hover_series_mode = "polygon"})
 	charts.interactive.set_hover(state, player, charts.interactive.get_hover_regions(state)[1])
-	-- vertical + horizontal + marker + 19 segments
-	assert.equals(22, #state.hover[player.index].objects)
+	-- vertical + horizontal + marker + one ribbon
+	assert.equals(4, #state.hover[player.index].objects)
 	charts.interactive.destroy(state)
 end)
 
@@ -396,13 +396,13 @@ test("redraw keeps the crosshair on the same column and series", function()
 	charts.interactive.destroy(state)
 end)
 
-test("on_hover and on_hover_leave callbacks receive cell and player", function()
+test("on_cell_hover and on_cell_leave callbacks receive cell and player", function()
 	local player = game.players[1]
 	if not player then return skip_without_player() end
 	local hovered, left = nil, nil
 	local state = make_state("test-crosshair-callbacks", {
-		on_hover = function(cell, p, s) hovered = {cell = cell, player = p, state = s} end,
-		on_hover_leave = function(p, s) left = {player = p, state = s} end,
+		on_cell_hover = function(cell, p, s) hovered = {cell = cell, player = p, state = s} end,
+		on_cell_leave = function(p, s) left = {player = p, state = s} end,
 	})
 	local region = charts.interactive.get_hover_regions(state)[1]
 	charts.interactive.set_hover(state, player, region)
@@ -557,12 +557,20 @@ test("register makes a state reachable again after load", function()
 end)
 
 test("old on_hover path keeps working next to the crosshair", function()
-	local state = make_state("test-crosshair-old-path")
+	local calls = {}
+	local state = make_state("test-crosshair-old-path", {
+		on_hover = function(region, s) calls.hover = {region = region, state = s} end,
+		on_hover_leave = function(region_id, s) calls.leave = {region_id = region_id, state = s} end,
+	})
 	local region = state.hit_regions[1]
 	charts.interactive.on_hover(state, region.id, game.players[1])
 	assert.equals(region.id, state.hovered_region)
 	assert.is_not_nil(state.highlights[region.id])
 	charts.interactive.on_hover_leave(state, region.id)
 	assert.is_nil(state.hovered_region)
+	assert.equals(region, calls.hover.region)
+	assert.equals(state, calls.hover.state)
+	assert.equals(region.id, calls.leave.region_id)
+	assert.equals(state, calls.leave.state)
 	charts.interactive.destroy(state)
 end)

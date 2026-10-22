@@ -173,8 +173,9 @@ local created = charts.interaction.create_overlay_buttons(parent, button_configs
 
 **Crosshair hover (line graphs):** `interaction/crosshair.lua` builds button regions from the metadata contract
 (`columns`, `plot`, `x_positions`, `series_order` bottom-most first, `seconds_ago`) and draws the per-player
-crosshair (`players = {player}`; the thick series is one `draw_polygon` triangle strip per unbroken run by
-default). Consumer wiring, three parts: a transparent button style in data.lua (empty graphical sets, padding 0,
+crosshair (`players = {player}`; the thick series is redrawn segment by segment, `hover_series_mode = "polygon"`
+trades uniform thickness for one triangle strip per run). Its callbacks are `on_cell_hover(cell, player, state)` /
+`on_cell_leave(player, state)`, separate from the old `on_hover(region, state)` / `on_hover_leave(region_id, state)`. Consumer wiring, three parts: a transparent button style in data.lua (empty graphical sets, padding 0,
 minimal size 1); `charts.interactive.get_hover_buttons(state, camera_info, {player = player})` passed to
 `charts.interaction.create_overlay_buttons(camera, configs, {button_style = ...})`; and the consumer's own
 `script.on_event` handlers for `on_gui_hover` / `on_gui_leave` calling `charts.events.handle_gui_hover(e)` /

@@ -115,7 +115,7 @@ end
 ---@param metadata table Graph metadata from render_with_metadata
 ---@param cell table region.data of a crosshair region
 ---@param player LuaPlayer|uint
----@param options table? {camera_zoom?, series_px?, marker_px?, series_mode?: "polygon"|"lines", color?, marker_color?, marker_radius?, ttl?}
+---@param options table? {camera_zoom?, series_px?, marker_px?, series_mode?: "lines"|"polygon", color?, marker_color?, marker_radius?, ttl?}
 ---@return LuaRenderObject[] objects Destroy them (destroy_render_objects) when the pointer leaves
 function interaction.draw_crosshair(surface, chunk, metadata, cell, player, options)
 	return crosshair.draw(surface, chunk, metadata, cell, player, options)

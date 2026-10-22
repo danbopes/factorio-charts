@@ -177,10 +177,11 @@ Details:
 - Rebuild the buttons after `update_line_graph` (the tooltips hold values). An active crosshair follows a redraw
   to the same column and series.
 - `charts.interactive.set_hover(state, player, cell)` / `clear_hover(state, player)` drive it directly;
-  `options.on_hover(cell, player, state)` and `options.on_hover_leave(player, state)` fire alongside.
+  `options.on_cell_hover(cell, player, state)` and `options.on_cell_leave(player, state)` fire alongside (the old
+  `on_hover(region, state)` / `on_hover_leave(region_id, state)` belong to the `charts.interactive.on_hover` path).
   Cell data: `{column, first_column, last_column, series_name, value, seconds_ago, graph_x, graph_y, color}`.
-- Options on the chart: `hover_series_mode` (`"polygon"` default, one mitred triangle strip per unbroken run, 4
-  objects per hover; `"lines"`, one object per segment), `hover_color` (guide lines, default 60% white),
+- Options on the chart: `hover_series_mode` (`"lines"` default, one object per segment, uniform thickness like
+  vanilla; `"polygon"`, one mitred triangle strip per unbroken run, 4 objects but uneven thickness), `hover_color` (guide lines, default 60% white),
   `hover_ttl`, and `camera_zoom` (default 1.5): widths are chosen so the guides are 1 screen px and the hovered
   series twice as thick as the base line on screen.
 - Without `charts.interactive`: `charts.interaction.create_line_graph_hover_regions(chunk, metadata, opts)` and
@@ -188,7 +189,7 @@ Details:
 
 Measured on Factorio 2.1 (900x700 widget, UI scale 1.5): regions + configs 2.0 ms / overlay buttons 3.7 ms at
 100 columns x 6 series (300 buttons), 3.1 ms / 5.6 ms at 300 x 6 (360 buttons, 720 GUI elements); one hover
-0.1-0.3 ms and 4 render objects (lines mode: 0.7 ms, 302 objects).
+about 0.7 ms and 302 render objects at 300 columns (polygon mode: 0.1-0.3 ms, 4 objects).
 
 ## API Reference
 

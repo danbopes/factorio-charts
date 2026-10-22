@@ -525,8 +525,8 @@ function interactive_chart.set_hover(state, player, cell)
 		series_name = data.series_name,
 		objects = draw_hover(state, player, data),
 	}
-	if state.options.on_hover then
-		state.options.on_hover(data, player, state)
+	if state.options.on_cell_hover then
+		state.options.on_cell_hover(data, player, state)
 	end
 end
 
@@ -544,9 +544,9 @@ function interactive_chart.clear_hover(state, player)
 	end
 	destroy_hover_entry(entry)
 	state.hover[index] = nil
-	if state.options.on_hover_leave then
+	if state.options.on_cell_leave then
 		local player_object = type(player) == "number" and game.get_player(player) or player
-		state.options.on_hover_leave(player_object, state)
+		state.options.on_cell_leave(player_object, state)
 	end
 end
 

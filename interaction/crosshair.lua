@@ -293,7 +293,7 @@ end
 ---@param metadata table Line graph metadata
 ---@param cell table Region data from create_regions (crosshair_cell or crosshair_column)
 ---@param player LuaPlayer|uint Only this player sees the objects
----@param opts table? {layout?, camera_zoom?: number (default metadata.camera_zoom or 1.5), series_px?: number (twice the base line), base_line_width?: number (1), marker_px?: number (2), marker_color?: Color, series_mode?: "polygon"|"lines" (default "polygon": one object per run; "lines": one per segment), color?: Color, marker_radius?: number, ttl?: number} color is the guide-line colour
+---@param opts table? {layout?, camera_zoom?: number (default metadata.camera_zoom or 1.5), series_px?: number (twice the base line), base_line_width?: number (1), marker_px?: number (2), marker_color?: Color, series_mode?: "lines"|"polygon" (default "lines": one object per segment, uniform thickness; "polygon": one mitred strip per run, fewer objects but uneven thickness), color?: Color, marker_radius?: number, ttl?: number} color is the guide-line colour
 ---@return LuaRenderObject[] objects
 function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 	opts = opts or {}
@@ -348,7 +348,7 @@ function crosshair.draw(surface, chunk, metadata, cell, player, opts)
 			local series_color = cell.color or WHITE
 			for _, run in ipairs(split_runs(points, layout.dx)) do
 				if #run >= 2 then
-					if opts.series_mode ~= "lines" then
+					if opts.series_mode == "polygon" then
 						objects[#objects + 1] = rendering.draw_polygon{
 							surface = surface,
 							color = series_color,
