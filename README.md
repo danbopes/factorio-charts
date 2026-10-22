@@ -167,7 +167,8 @@ charts.render.stacked_bars(surface, chunk, {..., camera_zoom = zoom})  -- 1 px g
 
 **Background and existing saves.** Chunks are now `out-of-map` tiles on a surface with `always_day = true`
 (pure black, no render objects), instead of `lab-dark-1` tiles lit by nine lights (which rendered a flat dark
-grey). `create_surface` sets `always_day` on an existing surface too, and new or reused chunks get the new tiles.
+grey). `create_surface` sets `always_day` on an existing surface too (so do `allocate_chunk` and
+`ensure_tile_coverage`, for surfaces kept from an old save), and new or reused chunks get the new tiles.
 Chunks your mod already holds from an older version keep their lights and lab tiles until you convert them:
 call `charts.surface.restyle_chunk(surface_data, chunk)` once per stored chunk (for example from
 `on_configuration_changed`), or free and re-allocate them. `restyle_chunk` is idempotent.

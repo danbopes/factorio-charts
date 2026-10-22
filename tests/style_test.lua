@@ -217,6 +217,17 @@ test("restyle_chunk converts a 1.2.0 chunk and is idempotent", function()
     assert.same({}, chunk.light_ids)
 end)
 
+test("allocate_chunk and ensure_tile_coverage turn always_day back on for a surface from an old save", function()
+    local surface_data = new_surface_data()
+    local surface = surface_data.surface
+    surface.always_day = false
+    local chunk = charts.allocate_chunk(surface_data)
+    assert.is_true(surface.always_day)
+    surface.always_day = false
+    charts.ensure_tile_coverage(surface_data, chunk, {viewport_width = 100, viewport_height = 100})
+    assert.is_true(surface.always_day)
+end)
+
 test("ensure_tile_coverage extends with out-of-map tiles", function()
     local surface_data = new_surface_data()
     local chunk = charts.allocate_chunk(surface_data)

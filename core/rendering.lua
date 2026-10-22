@@ -110,6 +110,8 @@ function rendering_module.allocate_chunk(surface_data, options)
 		end
 	end
 
+	-- Surfaces from saves before 1.3.0 relied on lights and are dark without always_day.
+	surface_data.surface.always_day = true
 	-- Also on reuse: a freed coordinate may still carry the lab tiles of a version before 1.3.0.
 	lay_background(surface_data.surface, chunk_coord, tiles_width, tiles_height)
 
@@ -124,6 +126,8 @@ end
 ---@param options table {viewport_width, viewport_height}
 function rendering_module.ensure_tile_coverage(surface_data, chunk, options)
 	if not chunk or not chunk.coord then return end
+	-- Before the early return below: old saves call this for chunks that already have enough tiles.
+	surface_data.surface.always_day = true
 
 	local viewport_width = options.viewport_width or surface_data.viewport_width or DEFAULT_VIEWPORT_WIDTH
 	local viewport_height = options.viewport_height or surface_data.viewport_height or DEFAULT_VIEWPORT_HEIGHT
