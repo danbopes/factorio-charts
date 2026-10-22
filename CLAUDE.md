@@ -184,8 +184,10 @@ minimal size 1); `charts.interactive.get_hover_buttons(state, camera_info, {play
 `charts.interaction.create_overlay_buttons(camera, configs, {button_style = ...})`; and the consumer's own
 `script.on_event` handlers for `on_gui_hover` / `on_gui_leave` calling `charts.events.handle_gui_hover(e)` /
 `handle_gui_leave(e)`. Buttons are tagged `{factorio_charts = {chart = state.id, region = region_id}}`; states
-register by id in a module table (give `options.id` so ids survive save/load, and `charts.interactive.register`
-storage-held states in `on_load`). Leave events can arrive after the next hover, so `handle_gui_leave` only clears
+register by id in a module table (`charts.interactive.register` storage-held states in `on_load`). Hover requires
+`options.id`: only such states are registered, and `get_hover_buttons` / `set_hover` / `register` error otherwise,
+because the generated-id counter is module state that differs between server and a joining client (desync) and
+restarts after a reload (collisions). Generated ids remain for charts without hover. Leave events can arrive after the next hover, so `handle_gui_leave` only clears
 the crosshair of the region being left. Region ids are `xh_<column>[_<series>]`, stable across rebuilds. The
 FactorioTest run is headless with no player, so the per-player tests in `tests/crosshair_test.lua` skip there; the
 lab's `chartlab` mod repeats them on a graphical host (`remote.call("chartlab", "verify_hover", 1)`).

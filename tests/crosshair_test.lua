@@ -82,9 +82,13 @@ local function make_state(surface_name, extra)
 	local surface_data = charts.surface.create(surface_name)
 	local chunk = charts.surface.allocate_chunk(surface_data)
 	local data, counts, sum = make_line_data(20, {"iron", "copper"})
-	local options = {data = data, index = 0, length = 20, counts = counts, sum = sum, ttl = 600}
+	-- Hover needs an explicit id; tests that check the generated-id path pass id = false.
+	local options = {data = data, index = 0, length = 20, counts = counts, sum = sum, ttl = 600, id = surface_name}
 	for k, v in pairs(extra or {}) do
 		options[k] = v
+	end
+	if options.id == false then
+		options.id = nil
 	end
 	return charts.interactive.create_line_graph(surface_data.surface, chunk, options), surface_data
 end
@@ -554,6 +558,25 @@ test("register makes a state reachable again after load", function()
 	charts.interactive.register(state)
 	assert.equals(state, charts.interactive.get_state("crosshair-register"))
 	charts.interactive.destroy(state)
+end)
+
+test("hover needs an explicit id: a generated id is not registered and hover calls error", function()
+	local state = make_state("test-crosshair-no-id", {id = false})
+	assert.is_string(state.id)
+	assert.is_nil(charts.interactive.get_state(state.id))
+	local ok, err = pcall(charts.interactive.get_hover_buttons, state, CAMERA)
+	assert.is_false(ok)
+	assert.is_truthy(string.find(err, "interactive charts need options.id to use hover", 1, true))
+	ok = pcall(charts.interactive.set_hover, state, game.players[1], {column = 1, series_name = "iron"})
+	assert.is_false(ok)
+	ok = pcall(charts.interactive.register, state)
+	assert.is_false(ok)
+	charts.interactive.destroy(state)
+
+	local named = make_state("test-crosshair-with-id", {id = "crosshair-with-id"})
+	assert.equals(named, charts.interactive.get_state("crosshair-with-id"))
+	assert.is_true(#charts.interactive.get_hover_buttons(named, CAMERA) > 0)
+	charts.interactive.destroy(named)
 end)
 
 test("old on_hover path keeps working next to the crosshair", function()

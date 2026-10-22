@@ -34,17 +34,33 @@ local function generate_chart_id()
 end
 
 -- GUI events only carry tags, so the hover handlers find the chart here. Module state is not saved: a consumer
--- that keeps states in storage re-registers them in on_load (ids from options.id stay the same across loads,
--- generated ids do not).
+-- that keeps states in storage re-registers them in on_load. Only states with an explicit options.id take part:
+-- generated ids come from a per-Lua-state counter, so a joining client or a reloaded save would hand out different
+-- ids than the server did and the tags on the hover buttons would desync or collide.
 local registry = {}
 
----Make a state reachable from charts.events.handle_gui_hover/handle_gui_leave
----@param state InteractiveChartState
-function interactive_chart.register(state)
-	if state and state.id then
-		registry[state.id] = state
-		state.hover = state.hover or {}
+local HOVER_ID_ERROR = "factorio-charts: interactive charts need options.id to use hover"
+
+local function has_explicit_id(state)
+	return state.id ~= nil and state.options ~= nil and state.options.id ~= nil and state.options.id == state.id
+end
+
+local function require_explicit_id(state)
+	if not has_explicit_id(state) then
+		error(HOVER_ID_ERROR, 3)
 	end
+end
+
+local function callback(state, name)
+	return state.options and state.options[name]
+end
+
+---Make a state reachable from charts.events.handle_gui_hover/handle_gui_leave
+---@param state InteractiveChartState A state created with options.id
+function interactive_chart.register(state)
+	require_explicit_id(state)
+	registry[state.id] = state
+	state.hover = state.hover or {}
 end
 
 ---@param state InteractiveChartState
@@ -113,7 +129,9 @@ function interactive_chart.create_line_graph(surface, chunk, options)
 		ordered_sums = nil,
 		hover = {},
 	}
-	interactive_chart.register(state)
+	if options.id ~= nil then
+		interactive_chart.register(state)
+	end
 
 	-- Initial render
 	interactive_chart.redraw_line_graph(state)
@@ -190,7 +208,9 @@ function interactive_chart.create_bar_chart(surface, chunk, options)
 		ordered_sums = nil,
 		hover = {},
 	}
-	interactive_chart.register(state)
+	if options.id ~= nil then
+		interactive_chart.register(state)
+	end
 
 	-- Initial render
 	interactive_chart.redraw_bar_chart(state)
@@ -510,7 +530,11 @@ end
 ---@param player LuaPlayer
 ---@param cell table A crosshair region or its data
 function interactive_chart.set_hover(state, player, cell)
-	if not state or not player or not player.valid or not cell or not state.metadata then
+	if not state then
+		return
+	end
+	require_explicit_id(state)
+	if not player or not player.valid or not cell or not state.metadata then
 		return
 	end
 	local data = cell.data or cell
@@ -525,8 +549,9 @@ function interactive_chart.set_hover(state, player, cell)
 		series_name = data.series_name,
 		objects = draw_hover(state, player, data),
 	}
-	if state.options.on_cell_hover then
-		state.options.on_cell_hover(data, player, state)
+	local on_cell_hover = callback(state, "on_cell_hover")
+	if on_cell_hover then
+		on_cell_hover(data, player, state)
 	end
 end
 
@@ -544,9 +569,10 @@ function interactive_chart.clear_hover(state, player)
 	end
 	destroy_hover_entry(entry)
 	state.hover[index] = nil
-	if state.options.on_cell_leave then
+	local on_cell_leave = callback(state, "on_cell_leave")
+	if on_cell_leave then
 		local player_object = type(player) == "number" and game.get_player(player) or player
-		state.options.on_cell_leave(player_object, state)
+		on_cell_leave(player_object, state)
 	end
 end
 
@@ -592,9 +618,11 @@ end
 ---@param state InteractiveChartState
 ---@param camera_info table From setup_camera_widget: {position, zoom, widget_width, widget_height}
 ---@param opts table? {mode?: "cell"|"column", max_buttons?: number, format_tooltip?: fun(cell, state): LocalisedString, player?: LuaPlayer, gui_zoom?: number}
+---Errors for a state created without options.id.
 ---@return table[] button_configs
 function interactive_chart.get_hover_buttons(state, camera_info, opts)
 	opts = opts or {}
+	require_explicit_id(state)
 	if not camera_info or state.chart_type ~= "line_graph" then
 		return {}
 	end
