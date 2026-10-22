@@ -590,6 +590,30 @@ test("register does not modify the state", function()
 	charts.interactive.destroy(state)
 end)
 
+test("callbacks given to register are used without being in options", function()
+	local state = make_state("test-crosshair-register-callbacks", {id = "crosshair-register-callbacks"})
+	local hovered, left = nil, nil
+	charts.interactive.register(state, {
+		on_cell_hover = function(cell) hovered = cell end,
+		on_cell_leave = function(p) left = p end,
+		format_tooltip = function(cell) return "registered " .. cell.column end,
+	})
+	assert.is_nil(state.options.on_cell_hover)
+	assert.is_nil(state.options.format_tooltip)
+	local configs = charts.interactive.get_hover_buttons(state, CAMERA)
+	assert.equals("registered " .. configs[1].region.data.column, configs[1].tooltip)
+	local player = game.players[1]
+	if player then
+		charts.interactive.set_hover(state, player, configs[1].region)
+		assert.equals(configs[1].region.data, hovered)
+		charts.interactive.clear_hover(state, player)
+		assert.equals(player, left)
+	end
+	charts.interactive.destroy(state)
+	assert.equals("table", type(charts.interactive.get_hover_buttons(
+		make_state("test-crosshair-register-callbacks-2", {id = "crosshair-register-callbacks"}), CAMERA)[1].tooltip))
+end)
+
 test("old on_hover path keeps working next to the crosshair", function()
 	local calls = {}
 	local state = make_state("test-crosshair-old-path", {

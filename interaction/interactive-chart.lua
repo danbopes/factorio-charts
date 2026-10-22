@@ -38,6 +38,8 @@ end
 -- generated ids come from a per-Lua-state counter, so a joining client or a reloaded save would hand out different
 -- ids than the server did and the tags on the hover buttons would desync or collide.
 local registry = {}
+-- Kept beside the registry rather than in the state because a state saved in storage cannot hold functions.
+local registry_callbacks = {}
 
 local HOVER_ID_ERROR = "factorio-charts: interactive charts need options.id to use hover"
 
@@ -52,20 +54,29 @@ local function require_explicit_id(state)
 end
 
 local function callback(state, name)
-	return state.options and state.options[name]
+	local callbacks = registry_callbacks[state.id]
+	local fn = callbacks and callbacks[name]
+	if fn == nil and state.options then
+		fn = state.options[name]
+	end
+	return fn
 end
 
 ---Make a state reachable from charts.events.handle_gui_hover/handle_gui_leave. Does not modify the state.
 ---@param state InteractiveChartState A state created with options.id
-function interactive_chart.register(state)
+---@param callbacks table? {on_cell_hover?, on_cell_leave?, format_tooltip?}; functions cannot be saved in storage,
+---so a consumer that keeps the state there passes them here in on_load. They take precedence over state.options.
+function interactive_chart.register(state, callbacks)
 	require_explicit_id(state)
 	registry[state.id] = state
+	registry_callbacks[state.id] = callbacks
 end
 
 ---@param state InteractiveChartState
 function interactive_chart.unregister(state)
 	if state and state.id and registry[state.id] == state then
 		registry[state.id] = nil
+		registry_callbacks[state.id] = nil
 	end
 end
 
@@ -617,7 +628,7 @@ end
 ---@param state InteractiveChartState
 ---@param camera_info table From setup_camera_widget: {position, zoom, widget_width, widget_height}
 ---@param opts table? {mode?: "cell"|"column", max_buttons?: number, format_tooltip?: fun(cell, state): LocalisedString, player?: LuaPlayer, gui_zoom?: number}
----Errors for a state created without options.id.
+---format_tooltip falls back to the one given to register. Errors for a state created without options.id.
 ---@return table[] button_configs
 function interactive_chart.get_hover_buttons(state, camera_info, opts)
 	opts = opts or {}
@@ -653,7 +664,8 @@ function interactive_chart.get_hover_buttons(state, camera_info, opts)
 	)
 
 	local label_format = state.options.label_format
-	local format_tooltip = opts.format_tooltip
+	-- state.options.format_tooltip is the older hit-region hook with a different signature, so no fallback to it.
+	local format_tooltip = opts.format_tooltip or (registry_callbacks[state.id] or {}).format_tooltip
 	for _, config in ipairs(configs) do
 		local data = config.region.data
 		if format_tooltip then

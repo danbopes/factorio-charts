@@ -211,11 +211,16 @@ plot is covered with transparent overlay buttons that raise `on_gui_hover` / `on
 
 Each button carries `tags = {factorio_charts = {chart = state.id, region = region_id}}`; the handlers look the
 state up in a registry filled by `create_line_graph` (module state, not saved: call
-`charts.interactive.register(state)` in `on_load` for states you keep in `storage`). Hover needs `options.id`:
+`charts.interactive.register(state, callbacks)` in `on_load` for states you keep in `storage`). Hover needs `options.id`:
 only states created with one are registered, and `get_hover_buttons`, `set_hover` and `register` raise
 `factorio-charts: interactive charts need options.id to use hover` for a state without it. Generated ids come
 from a counter that is not saved, so a joining client or a reloaded save would hand out different ids than the
-server did. Charts that never use hover can still omit the id. The crosshair objects use
+server did. Charts that never use hover can still omit the id.
+
+States kept in `storage`: pass callbacks to `charts.interactive.register(state, callbacks)` in `on_load`, where
+`callbacks = {on_cell_hover = fn, on_cell_leave = fn, format_tooltip = fn}`; function options are not saveable.
+Callbacks given to `register` win over the same names in the chart options, which still work for states that are
+never saved. `format_tooltip` there has the `opts.format_tooltip(cell, state)` signature of `get_hover_buttons`. The crosshair objects use
 `players = {player}`, so each player only sees their own; hovering never re-renders the graph.
 
 Details:
@@ -298,7 +303,7 @@ about 0.7 ms and 302 render objects at 300 columns (polygon mode: 0.1-0.3 ms, 4 
 | `charts.interactive.get_hover_buttons(state, camera_info, opts)` | Tagged overlay button configs for crosshair hover |
 | `charts.interactive.set_hover(state, player, cell)` / `clear_hover(state, player)` | Show / remove a player's crosshair |
 | `charts.interactive.get_hover_regions(state)` | Crosshair regions for the current data |
-| `charts.interactive.register(state)` / `unregister` / `get_state(id)` | Registry the GUI hover handlers use (states with `options.id` only) |
+| `charts.interactive.register(state, callbacks?)` / `unregister` / `get_state(id)` | Registry the GUI hover handlers use (states with `options.id` only) |
 | `charts.interactive.on_click(state, region_id, button, player)` | Handle click event |
 | `charts.interactive.toggle_series(state, series_name)` | Toggle series visibility |
 | `charts.interactive.destroy(state)` | Clean up all resources |
