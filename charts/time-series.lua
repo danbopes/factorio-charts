@@ -139,13 +139,17 @@ end
 ---@param interval_index number Which interval to render (1-based)
 ---@param options table Rendering options
 ---  - selected_series: table? {[name]: bool} Filter which series to show
----  - y_range: table? {min, max} Fixed Y-axis range (nil for auto-scale)
----  - label_format: string? "percent" (default) or "time"
+---  - y_range: (table|string)? {min, max} fixed range, "zero" for min pinned at 0, nil for auto-scale
+---  - label_format: string? "percent" (default), "time" or "si"
+---  - grid_lines: number? Horizontal grid lines (default 5)
+---  - nice_ticks: boolean? Round an auto-scaled Y range to nice steps (default false)
+---  - x_axis: (table|false)? Time labels; ticks_per_point defaults to the interval's `ticks`
 ---  - viewport_width: number? Viewport width in pixels (default 900)
 ---  - viewport_height: number? Viewport height in pixels (default 700)
 ---  - point_radius: number? Hit region radius around points (default 0.3)
 ---@return table? ordered_sums Array of {name, sum} sorted by sum descending
 ---@return table? hit_regions Hit regions for interaction
+---The render metadata is cached on `intervals[interval_index].metadata`.
 function time_series.render(surface, intervals, interval_index, options)
 	local interval = intervals[interval_index]
 	if not interval or not interval.chunk then
@@ -173,6 +177,19 @@ function time_series.render(surface, intervals, interval_index, options)
 	-- Calculate TTL based on interval's tick rate (at least 6 seconds)
 	local ttl = math.max(interval.ticks * 2, 360)
 
+	-- Copied so filling in ticks_per_point never writes into the caller's (possibly shared) table.
+	local x_axis = options.x_axis
+	if type(x_axis) == "table" then
+		local filled = {}
+		for k, v in pairs(x_axis) do
+			filled[k] = v
+		end
+		if filled.ticks_per_point == nil then
+			filled.ticks_per_point = interval.ticks
+		end
+		x_axis = filled
+	end
+
 	-- Render the line graph with metadata for interaction
 	local ordered_sums, line_ids, metadata = line_graph.render_with_metadata(surface, interval.chunk, {
 		data = interval.data,
@@ -186,6 +203,9 @@ function time_series.render(surface, intervals, interval_index, options)
 		ttl = ttl,
 		viewport_width = options.viewport_width,
 		viewport_height = options.viewport_height,
+		grid_lines = options.grid_lines,
+		nice_ticks = options.nice_ticks,
+		x_axis = x_axis,
 	})
 
 	if line_ids then
@@ -205,6 +225,7 @@ function time_series.render(surface, intervals, interval_index, options)
 	-- Cache for re-render checks
 	interval.ordered_sums = ordered_sums
 	interval.hit_regions = hit_regions
+	interval.metadata = metadata
 
 	return ordered_sums, hit_regions
 end
