@@ -623,8 +623,10 @@ end
 ---
 ---Each config carries tags {factorio_charts = {chart = state.id, region = region.id}}, a native tooltip and
 ---raise_hover_events = true. Positions are in GUI units: camera tiles are 32 * camera_zoom * density / scale GUI
----units wide, so pass opts.player (or opts.gui_zoom) unless the camera uses Cybersyn's zoom formula
----display_scale / display_density_scale, for which the default gui_zoom of 1 is exact.
+---units wide, so pass opts.player (or opts.gui_zoom). Without either, gui_zoom is 1, which is exact only for a camera
+---zoom of exactly display_scale / display_density_scale (Cybersyn's Breakdown tab). Cybersyn's Utilization tab
+---adds 0.05 to that, so its true gui_zoom is 1 + 0.05 * density / scale and the default puts buttons short of their
+---columns by that factor of their distance from the widget centre: it needs opts.player.
 ---@param state InteractiveChartState
 ---@param camera_info table From setup_camera_widget: {position, zoom, widget_width, widget_height}
 ---@param opts table? {mode?: "cell"|"column", max_buttons?: number, format_tooltip?: fun(cell, state): LocalisedString, player?: LuaPlayer, gui_zoom?: number}

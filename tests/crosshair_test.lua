@@ -544,6 +544,37 @@ test("get_hover_buttons tags every config and sets a tooltip", function()
 	charts.interactive.destroy(state)
 end)
 
+test("get_hover_buttons with opts.player places buttons for a zoom that is not scale / density", function()
+	-- Cybersyn's Utilization tab: zoom = display_scale / display_density_scale + 0.05. The default gui_zoom of 1
+	-- is only exact without the 0.05; a headless run has no player, and a real one's density cannot be set.
+	local player = {valid = true, display_scale = 1.5, display_density_scale = 2}
+	local camera = {position = CAMERA.position, zoom = 1.5 / 2 + 0.05, widget_width = 900, widget_height = 700}
+	local state = make_state("test-crosshair-gui-zoom", {id = "crosshair-gui-zoom"})
+	local opts = {mode = "column", player = player}
+	local configs = charts.interactive.get_hover_buttons(state, camera, opts)
+	local expected = charts.interaction.generate_overlay_buttons(camera.position, camera.zoom * 2 / 1.5,
+		{width = 900, height = 700}, charts.interactive.get_hover_regions(state))
+	assert.equals(#expected, #configs)
+	for i, config in ipairs(configs) do
+		assert.same(expected[i].style_mods, config.style_mods)
+	end
+	-- Without the player the edge columns land short of the plot by 0.05 * density / scale of their offset.
+	local default = {}
+	for _, config in ipairs(charts.interactive.get_hover_buttons(state, camera, {mode = "column"})) do
+		default[config.region_id] = config.style_mods
+	end
+	local first, last
+	for _, config in ipairs(configs) do
+		if default[config.region_id] then
+			first = first or config
+			last = config
+		end
+	end
+	assert.is_true(default[first.region_id].left_margin - first.style_mods.left_margin > 10)
+	assert.is_true(last.style_mods.left_margin - default[last.region_id].left_margin > 10)
+	charts.interactive.destroy(state)
+end)
+
 test("create_overlay_buttons sets raise_hover_events", function()
 	local player = game.players[1]
 	if not player then return skip_without_player() end
