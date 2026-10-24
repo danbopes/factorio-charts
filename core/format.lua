@@ -1,23 +1,51 @@
 -- Formatting utilities for chart labels
 local format_module = {}
 
+local function strip_zeros(text)
+	if text:find("%.") then
+		text = text:gsub("0+$", ""):gsub("%.$", "")
+	end
+	return text
+end
+
+-- One decimal below 10, whole numbers above, so labels keep two or three significant digits.
+-- `decimals` overrides that when a caller needs finer labels to keep adjacent ticks distinct.
+local function short_number(x, decimals)
+	if decimals then
+		return strip_zeros(string.format("%." .. decimals .. "f", x))
+	end
+	if x < 10 then
+		local text = strip_zeros(string.format("%.1f", x))
+		if tonumber(text) < 10 then
+			return text
+		end
+	end
+	return string.format("%.0f", x)
+end
+
 ---Format seconds into human readable time for Y-axis labels
+---Below 10 of a unit it keeps one decimal, so ticks like 150 s and 180 s read "2.5m" and "3m" instead of "3m" twice.
 ---@param seconds number
+---@param decimals number? Fixed maximum decimals for seconds and minutes (trailing zeros dropped)
 ---@return string
-function format_module.time_label(seconds)
+function format_module.time_label(seconds, decimals)
 	if seconds < 60 then
-		return string.format("%.0fs", seconds)
+		return short_number(seconds, decimals) .. "s"
 	elseif seconds < 3600 then
-		return string.format("%.0fm", seconds / 60)
+		return short_number(seconds / 60, decimals) .. "m"
 	else
-		return string.format("%.1fh", seconds / 3600)
+		return string.format("%." .. math.max(1, decimals or 1) .. "f", seconds / 3600) .. "h"
 	end
 end
 
 ---Format a percentage for Y-axis labels
 ---@param value number The percentage value (0-100)
+---@param decimals number? Maximum decimals (trailing zeros dropped); default none
 ---@return string
-function format_module.percent_label(value)
+function format_module.percent_label(value, decimals)
+	if decimals then
+		return strip_zeros(string.format("%." .. decimals .. "f", value)) .. "%"
+	end
 	return string.format("%.0f%%", value)
 end
 
@@ -37,5 +65,94 @@ function format_module.time_detailed(seconds)
 		return string.format("%dh %dm", hours, mins)
 	end
 end
+
+-- Vanilla production-graph style: "0", "950", "1.2k", "16k", "1.2M".
+local si_units = {
+	{1e12, "T"},
+	{1e9, "G"},
+	{1e6, "M"},
+	{1e3, "k"},
+}
+
+
+---Format a number with an SI suffix the way Factorio's production graph labels its axis
+---@param value number
+---@param decimals number? Fixed maximum decimals instead of "one below 10" (trailing zeros dropped)
+---@return string
+function format_module.si_label(value, decimals)
+	if value ~= value then
+		return "NaN"
+	end
+	local magnitude = math.abs(value)
+	local unit_index = #si_units + 1
+	for i, unit in ipairs(si_units) do
+		if magnitude >= unit[1] then
+			unit_index = i
+			break
+		end
+	end
+
+	local text
+	while true do
+		local unit = si_units[unit_index]
+		local scaled = unit and magnitude / unit[1] or magnitude
+		text = short_number(scaled, decimals)
+		-- Rounding can carry into the next unit (999.6k -> "1000k"), which should read "1M".
+		if tonumber(text) >= 1000 and unit_index > 1 then
+			unit_index = unit_index - 1
+		else
+			text = text .. (unit and unit[2] or "")
+			break
+		end
+	end
+
+	if value < 0 and text ~= "0" then
+		text = "-" .. text
+	end
+	return text
+end
+
+---Format an axis tick value with at most `decimals` decimals and no trailing zeros
+---@param value number
+---@param decimals number?
+---@return string
+function format_module.axis_number(value, decimals)
+	decimals = decimals or 1
+	local text = strip_zeros(string.format("%." .. decimals .. "f", value))
+	if text == "-0" then
+		text = "0"
+	end
+	return text
+end
+
+local function plural(amount, unit)
+	if tostring(amount) == "1" then
+		return "1 " .. unit .. " ago"
+	end
+	return amount .. " " .. unit .. "s ago"
+end
+
+-- One decimal like the vanilla production graph tooltip, but "6 minutes" rather than "6.0 minutes".
+local function one_decimal(value)
+	local text = string.format("%.1f", value)
+	return (text:gsub("%.0$", ""))
+end
+
+---Format an age in seconds the way the vanilla production graph tooltip does
+---@param seconds number
+---@return string text "42 seconds ago", "6.6 minutes ago", "1.3 hours ago"
+function format_module.time_ago(seconds)
+	-- Round before picking the unit, or 59.6 s would read "60 seconds ago" and 3599 s "60 minutes ago".
+	local whole_seconds = math.floor(seconds + 0.5)
+	if whole_seconds < 60 then
+		return plural(whole_seconds, "second")
+	end
+	local minutes = one_decimal(seconds / 60)
+	if tonumber(minutes) < 60 then
+		return plural(minutes, "minute")
+	end
+	return plural(one_decimal(seconds / 3600), "hour")
+end
+
 
 return format_module

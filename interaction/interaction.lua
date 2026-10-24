@@ -2,6 +2,7 @@
 local interaction = {}
 
 local colors_module = require("core/colors")
+local crosshair = require("interaction/crosshair")
 
 ---@class HitRegion
 ---@field id string Unique identifier for this hit region
@@ -96,6 +97,28 @@ function interaction.create_line_graph_hit_regions(chunk, metadata, options)
 	end
 
 	return regions
+end
+
+---Create crosshair hover regions for a line graph (see interaction/crosshair.lua)
+---@param chunk table Chunk with coord
+---@param metadata table Graph metadata from render_with_metadata
+---@param options table? {mode?: "cell"|"column", max_buttons?: number (default 400)}
+---@return HitRegion[] regions Regions of type "crosshair_cell" (or "crosshair_column" in column mode)
+function interaction.create_line_graph_hover_regions(chunk, metadata, options)
+	local regions = crosshair.create_regions(chunk, metadata, options)
+	return regions
+end
+
+---Draw a crosshair for one player from a hover region's data, for consumers that do not use charts.interactive
+---@param surface LuaSurface
+---@param chunk table Chunk with coord
+---@param metadata table Graph metadata from render_with_metadata
+---@param cell table region.data of a crosshair region
+---@param player LuaPlayer|uint
+---@param options table? {camera_zoom?, series_px?, marker_px?, series_mode?: "lines"|"polygon", color?, marker_color?, marker_radius?, ttl?}
+---@return LuaRenderObject[] objects Destroy them (destroy_render_objects) when the pointer leaves
+function interaction.draw_crosshair(surface, chunk, metadata, cell, player, options)
+	return crosshair.draw(surface, chunk, metadata, cell, player, options)
 end
 
 ---Create hit regions for bar chart segments
@@ -394,9 +417,10 @@ end
 
 ---Create z-ordered overlay buttons on a camera widget
 ---@param parent LuaGuiElement Camera widget
----@param button_configs table[] From generate_overlay_buttons() — each has {style_mods, tooltip?, tags?}
+---@param button_configs table[] From generate_overlay_buttons() — each has {style_mods, tooltip?, tags?, raise_hover_events?}
 ---@param options table
 ---  - button_style: string (required, mod-specific style prototype name)
+---  - raise_hover_events: boolean? Buttons raise on_gui_hover/on_gui_leave (a config's own flag also turns it on)
 ---  - widget_width: number? (for clipping off-screen buttons)
 ---  - widget_height: number? (for clipping)
 ---  - clear_existing: boolean? (default true)
@@ -478,6 +502,7 @@ function interaction.create_overlay_buttons(parent, button_configs, options)
 				style = button_style,
 				tooltip = config.tooltip,
 				tags = config.tags,
+				raise_hover_events = (config.raise_hover_events or options.raise_hover_events) and true or nil,
 			}
 			btn.style.left_margin = left
 			btn.style.top_margin = top

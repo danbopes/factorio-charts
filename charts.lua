@@ -10,6 +10,7 @@ local rendering_module = require("core/rendering")
 local line_graph = require("charts/line-graph")
 local bar_chart = require("charts/bar-chart")
 local colors = require("core/colors")
+local style = require("core/style")
 local format = require("core/format")
 local interaction = require("interaction/interaction")
 local interactive_chart = require("interaction/interactive-chart")
@@ -26,6 +27,7 @@ charts.surface = {
 	allocate_chunk = rendering_module.allocate_chunk,
 	free_chunk = rendering_module.free_chunk,
 	ensure_tile_coverage = rendering_module.ensure_tile_coverage,
+	restyle_chunk = rendering_module.restyle_chunk,
 	get_viewport_size = rendering_module.get_viewport_size,
 	get_camera_params = rendering_module.get_camera_params,
 	setup_camera_widget = rendering_module.setup_camera_widget,
@@ -53,11 +55,16 @@ charts.colors = {
 	get_max_series = colors.get_max_series,
 }
 
+-- The production-graph look: line widths per camera zoom, grid/label style, moving average
+charts.style = style
+
 -- Format utilities
 charts.format = {
 	time_label = format.time_label,
 	percent_label = format.percent_label,
 	time_detailed = format.time_detailed,
+	si_label = format.si_label,
+	time_ago = format.time_ago,
 }
 
 -- Interaction primitives
@@ -67,6 +74,8 @@ charts.interaction = {
 	hit_test = interaction.hit_test,
 	hit_test_all = interaction.hit_test_all,
 	create_line_graph_hit_regions = interaction.create_line_graph_hit_regions,
+	create_line_graph_hover_regions = interaction.create_line_graph_hover_regions,
+	draw_crosshair = interaction.draw_crosshair,
 	create_bar_chart_hit_regions = interaction.create_bar_chart_hit_regions,
 	create_legend_hit_regions = interaction.create_legend_hit_regions,
 	create_highlight = interaction.create_highlight,
@@ -93,6 +102,13 @@ charts.interactive = {
 	get_overlay_buttons = interactive_chart.get_overlay_buttons,
 	hit_test = interactive_chart.hit_test,
 	hit_test_screen = interactive_chart.hit_test_screen,
+	get_hover_buttons = interactive_chart.get_hover_buttons,
+	get_hover_regions = interactive_chart.get_hover_regions,
+	set_hover = interactive_chart.set_hover,
+	clear_hover = interactive_chart.clear_hover,
+	register = interactive_chart.register,
+	unregister = interactive_chart.unregister,
+	get_state = interactive_chart.get_state,
 }
 
 -- Event registration
@@ -101,6 +117,8 @@ charts.events = {
 	unregister = events.unregister,
 	is_registered = events.is_registered,
 	get_tick_handler = events.get_tick_handler,
+	handle_gui_hover = events.handle_gui_hover,
+	handle_gui_leave = events.handle_gui_leave,
 }
 
 -- Time series data management
@@ -151,6 +169,7 @@ charts.get_max_series = colors.get_max_series
 charts.format_time_label = format.time_label
 charts.format_percent_label = format.percent_label
 charts.format_time_detailed = format.time_detailed
+charts.format_si_label = format.si_label
 
 -- Low-level interaction primitives
 charts.tile_to_screen = interaction.tile_to_screen
