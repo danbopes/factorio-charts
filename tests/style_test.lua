@@ -183,6 +183,18 @@ test("create_surface sets always_day and allocate_chunk lays out-of-map without 
     assert.equals(0, #objects_on(surface_data.surface))
 end)
 
+test("allocate_chunk lays the background 8 tiles past the chunk so cameras never see fog", function()
+    local surface_data = new_surface_data()
+    local surface = surface_data.surface
+    local chunk = charts.allocate_chunk(surface_data)
+    local c, w, h = chunk.coord, chunk.tiles_width, chunk.tiles_height
+    for _, pos in ipairs({{c.x - 8, c.y - 8}, {c.x + w + 7, c.y - 8}, {c.x - 8, c.y + h + 7}, {c.x + w + 7, c.y + h + 7}}) do
+        local tile = surface.get_tile(pos[1], pos[2])
+        assert.is_true(tile.valid, "no tile at " .. pos[1] .. "," .. pos[2])
+        assert.equals("out-of-map", tile.name)
+    end
+end)
+
 test("restyle_chunk converts a 1.2.0 chunk and is idempotent", function()
     local surface_data = new_surface_data()
     local surface = surface_data.surface

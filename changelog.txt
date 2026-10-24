@@ -4,6 +4,7 @@ Date: ????
   Changes:
     - New default look, like the vanilla Production statistics graph: black plot area, 1 px series lines, 8 grid lines (was 5), grid colour 0.25 grey at 1 px, labels in font "default" at scale 0.93 in 0.7 grey
     - Chart chunks use out-of-map tiles on an always_day surface instead of lab tiles lit by nine lights (pure black, 9 fewer render objects per chunk); allocate_chunk and ensure_tile_coverage also set always_day, so surfaces from old saves do not go dark
+    - The background reaches 8 tiles past each chunk, so a camera that shows a little beyond the chart (Cybersyn's Breakdown tab does) sees black instead of the grey unexplored-map fog
     - Line graph points are plot width / columns apart (was / (columns - 1)): each column is a time slot ending at its point, the newest on the right edge and the oldest one slot in from the left, so the X labels span exactly the plot ("10" on the left edge for 300 x 2 s); metadata dx and x_positions follow
     - Bar chart grid, labels and hatching use the same style, with 1 px lines; bar chart labels are larger (scale 0.93, was 0.8)
     - charts.colors.get_grid_color returns opaque 0.25 grey (was 0.3 grey at alpha 0.4) and get_label_color 0.7 grey (was 0.8)

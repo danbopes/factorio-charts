@@ -9,6 +9,9 @@ local DEFAULT_VIEWPORT_HEIGHT = 700
 -- lies outside the 1x1 map, and set_tiles still works there; a position that never gets a tile shows the
 -- unexplored-map fog texture instead, so the whole chunk area is always tiled.
 local BACKGROUND_TILE = "out-of-map"
+-- Cameras often show a little past the chunk (Cybersyn's Breakdown tab does), and the fog texture there reads as grey
+-- smudges on black. Every chunk lays the same tile, so a margin that overlaps a neighbour's cell changes nothing.
+local BACKGROUND_MARGIN = 8
 
 ---@param surface LuaSurface
 ---@param coord table {x, y} top-left tile
@@ -17,8 +20,8 @@ local BACKGROUND_TILE = "out-of-map"
 local function lay_background(surface, coord, tiles_width, tiles_height)
 	local tiles = {}
 	local i = 1
-	for x = coord.x, coord.x + tiles_width - 1 do
-		for y = coord.y, coord.y + tiles_height - 1 do
+	for x = coord.x - BACKGROUND_MARGIN, coord.x + tiles_width - 1 + BACKGROUND_MARGIN do
+		for y = coord.y - BACKGROUND_MARGIN, coord.y + tiles_height - 1 + BACKGROUND_MARGIN do
 			tiles[i] = {name = BACKGROUND_TILE, position = {x = x, y = y}}
 			i = i + 1
 		end
