@@ -26,7 +26,8 @@ local function lay_background(surface, coord, tiles_width, tiles_height)
 			i = i + 1
 		end
 	end
-	surface.set_tiles(tiles)
+	-- Tile correction only fixes transitions between tiles, and out-of-map has none; skipping it is most of the cost.
+	surface.set_tiles(tiles, false)
 end
 
 ---@param chunk table
