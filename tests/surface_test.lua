@@ -10,7 +10,7 @@ test("create_surface creates a valid surface", function()
     assert.equals("test-surface-1", surface_data.surface.name)
 end)
 
-test("allocate_chunk returns valid chunk with lights", function()
+test("allocate_chunk returns a valid chunk without lights", function()
     local surface_data = charts.create_surface("test-surface-2")
     local chunk = charts.allocate_chunk(surface_data)
 
@@ -18,24 +18,30 @@ test("allocate_chunk returns valid chunk with lights", function()
     assert.is_table(chunk.coord)
     assert.is_number(chunk.coord.x)
     assert.is_number(chunk.coord.y)
+    -- Still a table for consumers that iterate it, but 1.3.0 draws no lights.
     assert.is_table(chunk.light_ids)
-    assert.equals(9, #chunk.light_ids) -- 3x3 grid of lights
+    assert.equals(0, #chunk.light_ids)
 end)
 
-test("free_chunk destroys lights and returns chunk to freelist", function()
+test("free_chunk returns chunk to freelist and destroys legacy lights", function()
     local surface_data = charts.create_surface("test-surface-3")
     local chunk = charts.allocate_chunk(surface_data)
+    local legacy_light = rendering.draw_light{
+        sprite = "utility/light_medium", target = chunk.coord, surface = surface_data.surface,
+    }
+    chunk.light_ids = {legacy_light}
     local initial_freelist_size = #surface_data.chunk_freelist
 
     charts.free_chunk(surface_data, chunk)
 
-    -- Chunk should be in freelist
     assert.equals(initial_freelist_size + 1, #surface_data.chunk_freelist)
+    assert.is_false(legacy_light.valid)
 
-    -- Lights should be destroyed (invalid)
-    for _, light_id in ipairs(chunk.light_ids) do
-        assert.is_false(light_id.valid)
-    end
+    -- A chunk table with no light_ids at all (hand-made or very old) must not error.
+    local bare = charts.allocate_chunk(surface_data)
+    bare.light_ids = nil
+    charts.free_chunk(surface_data, bare)
+    assert.equals(initial_freelist_size + 1, #surface_data.chunk_freelist)
 end)
 
 test("allocate_chunk reuses freed chunks", function()

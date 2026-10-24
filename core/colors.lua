@@ -17,11 +17,11 @@ local series_colors = {
 	{r = 1.0,  g = 0.5,  b = 1.0},   -- Pink
 }
 
--- Grid line color (subtle)
-local grid_color = {r = 0.3, g = 0.3, b = 0.3, a = 0.4}
+-- Opaque on the black chart background: a faint 1 px line like the vanilla production graph.
+local grid_color = {r = 0.25, g = 0.25, b = 0.25}
 
--- Label color
-local label_color = {r = 0.8, g = 0.8, b = 0.8}
+-- Readable on black without competing with the series.
+local label_color = {r = 0.7, g = 0.7, b = 0.7}
 
 ---Get the series color palette
 ---@return table[] Array of color tables

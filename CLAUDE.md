@@ -13,7 +13,7 @@ Tests require the `factorio-test` mod (optional dependency). Two test frameworks
 1. **factorio-test (interactive)**: Load mod in Factorio, click "Run Tests" in GUI
 2. **factorio-test-harness (automated)**: Command-line testing via the harness
 
-Test files are in `tests/` and registered in `tests/init.lua` (for factorio-test) and `tests/harness_init.lua` (for harness).
+Test files are in `tests/` and registered in `tests/init.lua` (for factorio-test) and `tests/harness_init.lua` (for harness). FactorioTest 3.x needs `load_luassert = true` (passed in `tests/init.lua`) for the global `assert` the tests use. The library's `control.lua` does not require `tests/init.lua`, so a runner mod has to register the files.
 
 ## Architecture
 
@@ -25,7 +25,8 @@ factorio-charts/
 ├── control.lua                     Factorio requirement (minimal)
 ├── core/
 │   ├── rendering.lua               Surface and chunk management
-│   ├── colors.lua                  12-color series palette
+│   ├── colors.lua                  12-color series palette, grid and label colours
+│   ├── style.lua                   The production-graph look (line widths per zoom, label style, smoothing)
 │   └── format.lua                  Label formatting utilities
 ├── charts/
 │   ├── line-graph.lua              Multi-series line graph rendering
@@ -33,13 +34,14 @@ factorio-charts/
 │   └── time-series.lua             Multi-resolution time series with cascading aggregation
 ├── interaction/
 │   ├── interaction.lua             Hit testing, coordinate transforms, highlights/tooltips
-│   ├── interactive-chart.lua       High-level wrapper with state management
-│   └── events.lua                  Event handler registration
+│   ├── interactive-chart.lua       High-level wrapper with state management, hover registry
+│   ├── crosshair.lua               Production-graph crosshair: hover regions, per-player drawing, tooltips
+│   └── events.lua                  Event handler registration, on_gui_hover/on_gui_leave forwarding
 └── tests/
 ```
 
 **Grouping rationale:**
-- **`core/`** — Shared foundations with no chart-type deps (surface mgmt, colors, formatting)
+- **`core/`** — Shared foundations with no chart-type deps (surface mgmt, colors, style, formatting)
 - **`charts/`** — Chart type implementations (depend on core/, produce rendered output)
 - **`interaction/`** — User interaction: hit testing, high-level interactive wrapper, events
 
@@ -52,15 +54,16 @@ factorio-charts/
 | `charts.surface` | Surface/chunk management: `create`, `allocate_chunk`, `free_chunk`, `get_camera_params`, etc. |
 | `charts.render` | Chart rendering: `line_graph`, `stacked_bars`, `time_series`, `*_with_metadata`, `*_with_overlays` |
 | `charts.colors` | Color palette: `get_series_colors`, `get_series_color`, `get_grid_color`, `get_label_color`, `get_max_series` |
-| `charts.format` | Formatting: `time_label`, `percent_label`, `time_detailed` |
+| `charts.style` | The 1.3.0 look: `line_width(px, zoom)`, `grid_width`, `draw_label`, `smooth`, `DEFAULT_ZOOM`, colours |
+| `charts.format` | Formatting: `time_label`, `percent_label`, `time_detailed`, `si_label` |
 | `charts.interaction` | Hit testing, coordinate transforms, highlights, tooltips, overlay buttons |
-| `charts.interactive` | High-level interactive chart wrappers: `create_line_graph`, `on_hover`, `destroy`, etc. |
-| `charts.events` | Event registration: `register`, `unregister`, `is_registered`, `get_tick_handler` |
+| `charts.interactive` | High-level interactive chart wrappers: `create_line_graph`, `on_hover`, `get_hover_buttons`, `set_hover`, `destroy`, etc. |
+| `charts.events` | Event registration: `register`, `unregister`, `is_registered`, `get_tick_handler`, `handle_gui_hover`, `handle_gui_leave` |
 | `charts.time_series` | Time series data: `create`, `add_datapoint`, `get_average`, `clear` |
 
 ### Key Concepts
 
-**Surface Management**: Charts are rendered on hidden Factorio surfaces. `charts.surface.create()` initializes one, then `charts.surface.allocate_chunk()` gives you a 32x32 tile area with lighting. Chunks are reused via a freelist when freed.
+**Surface Management**: Charts are rendered on hidden Factorio surfaces. `charts.surface.create()` initializes one, then `charts.surface.allocate_chunk()` gives you a tile area sized to the viewport, covered in `out-of-map` tiles on an `always_day` surface (pure black, no lights since 1.3.0). Chunks are reused via a freelist when freed. `restyle_chunk` converts chunks allocated by older versions (lab tiles + nine lights); it must stay idempotent.
 
 **Ring Buffer Data Format**: Line graphs expect data in a ring buffer format:
 - `data`: array of `{[series_name]: value}` tables
@@ -69,6 +72,10 @@ factorio-charts/
 - Iteration order is `index+1 → length`, then `1 → index` for chronological display
 
 **Rendering Coordinates**: Graphs use pixel-based viewport dimensions (default 900x700) converted to tile coordinates (divide by 32). Graph area has margins for axis labels.
+
+**Axes (opt-in)**: `x_axis = {ticks_per_point, format, labels, grid}` adds "minutes ago" labels under the plot (newest = 0 at the right edge, plot bottom moves up 0.7 tile). Each column is one time slot ending at its point: `dx = plot width / columns`, `x_positions[i] = plot.left + i * dx` (oldest one slot in from the left, newest on `plot.right`), labels at `plot.right - seconds_ago / seconds_per_column * dx`, so the left edge reads `columns x seconds_per_column` like vanilla and every label lies within the plot. The crosshair derives its column width from `x_positions` and stretches column 1's cell to `plot.left`; `label_format = "si"`, `grid_lines`, `y_range = "zero"` and `nice_ticks` shape the Y axis. Defaults are `x_axis = false` and no nice ticks; `grid_lines` defaults to 8 since 1.3.0 (`tests/axes_test.lua` pins the default object set), but to 5 when `y_range` is a fixed `{min, max}` table so fixed percent charts keep round steps. "si", "time" and "percent" labels add decimals until no two neighbouring ticks repeat. Metadata adds `columns`, `x_positions`, `seconds_ago`, `plot`, `series_order` (bottom-most first), `y_ticks`, `x_labels`: hover code (crosshair) builds on these names, so keep them stable. Label helpers in `core/format.lua` take an optional `decimals` so the renderer can keep neighbouring ticks distinct.
+
+**The look (1.3.0 defaults)**: measured on Factorio 2.1: `draw_line` is not anti-aliased and a width `w` shows as about `ceil(w * camera_zoom)` screen pixels, so widths come from `style.line_width(px, zoom) = (px - 0.5) / zoom` (aiming half a pixel low avoids the rounding boundary). Renderers take `camera_zoom` (default `style.DEFAULT_ZOOM` = 1.5) and the line graph `line_px` / `line_width` / `smooth`. Plain `draw_line` segments only: vertex circles add objects for nothing, and thin `draw_polygon` ribbons drop pixels. Grid {0.25} 1 px, labels font "default" scale 0.93 colour {0.7} with `scale_with_zoom = false` (true would pin text to its zoom-1 size and ignore UI scale). New drawing (hover markers etc.) should go through `core/style.lua`.
 
 **TTL-Based Cleanup**: All rendered objects use `time_to_live` in ticks. No manual cleanup needed for graph lines/text - they auto-expire.
 
@@ -168,6 +175,25 @@ local created = charts.interaction.create_overlay_buttons(parent, button_configs
 })
 ```
 
+**Crosshair hover (line graphs):** `interaction/crosshair.lua` builds button regions from the metadata contract
+(`columns`, `plot`, `x_positions`, `series_order` bottom-most first, `seconds_ago`) and draws the per-player
+crosshair (`players = {player}`; the thick series is redrawn segment by segment, `hover_series_mode = "polygon"`
+trades uniform thickness for one triangle strip per run). Its callbacks are `on_cell_hover(cell, player, state)` /
+`on_cell_leave(player, state)`, separate from the old `on_hover(region, state)` / `on_hover_leave(region_id, state)`. Consumer wiring, three parts: a transparent button style in data.lua (empty graphical sets, padding 0,
+minimal size 1); `charts.interactive.get_hover_buttons(state, camera_info, {player = player})` passed to
+`charts.interaction.create_overlay_buttons(camera, configs, {button_style = ...})`; and the consumer's own
+`script.on_event` handlers for `on_gui_hover` / `on_gui_leave` calling `charts.events.handle_gui_hover(e)` /
+`handle_gui_leave(e)`. Buttons are tagged `{factorio_charts = {chart = state.id, region = region_id}}`; states
+register by id in a module table (`charts.interactive.register` storage-held states in `on_load`). Hover requires
+`options.id`: only such states are registered, and `get_hover_buttons` / `set_hover` / `register` error otherwise,
+because the generated-id counter is module state that differs between server and a joining client (desync) and
+restarts after a reload (collisions). Generated ids remain for charts without hover. `register(state, callbacks)` keeps `on_cell_hover` / `on_cell_leave` /
+`format_tooltip` in a module table next to the registry (a state in `storage` cannot hold functions); lookups try
+that table first and `state.options` second. `register` must not write to the state. Leave events can arrive after the next hover, so `handle_gui_leave` only clears
+the crosshair of the region being left. Region ids are `xh_<column>[_<series>]`, stable across rebuilds. The
+FactorioTest run is headless with no player, so the per-player tests in `tests/crosshair_test.lua` skip there; the
+lab's `chartlab` mod repeats them on a graphical host (`remote.call("chartlab", "verify_hover", 1)`).
+
 **Time Series:** Multi-resolution data storage with cascading aggregation (like RRDtool):
 ```lua
 -- Define intervals: each level aggregates 'steps' samples from the previous
@@ -188,7 +214,8 @@ charts.time_series.add_datapoint(intervals, {series1 = 50, series2 = 75})
 local ordered_sums, hit_regions = charts.render.time_series(surface, intervals, 1, {
     selected_series = nil,  -- or {series1 = true, series2 = false}
     y_range = {0, 100},     -- fixed range, or nil for auto-scale
-    label_format = "percent", -- or "time"
+    label_format = "percent", -- or "time", "si"
+    x_axis = {format = "auto"}, -- optional; ticks_per_point defaults to the interval's ticks
     viewport_width = 900,
     viewport_height = 700,
 })

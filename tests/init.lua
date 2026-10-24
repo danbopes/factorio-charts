@@ -18,5 +18,11 @@ if script.active_mods["factorio-test"] then
         "tests/interaction_test",
         "tests/interactive_chart_test",
         "tests/events_test",
+        "tests/axes_test",
+        "tests/crosshair_test",
+        "tests/style_test",
+    }, {
+        -- FactorioTest 3.x no longer installs luassert as the global `assert` unless asked.
+        load_luassert = true,
     })
 end
